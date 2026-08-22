@@ -8,22 +8,26 @@
 # Copied verbatim from payload/ at adopt time; fill the placeholders below.
 
 # Version of the shared model this repo conforms to. Bumped by `docgov migrate`.
-model_version: 0.2.0
+model_version: 0.2.1
 
 # ISO date this repo adopted the model (set once, at adoption).
 adopted_at: "<YYYY-MM-DD>"   # fill with the adoption date
+
+# Default steward the governance loop notifies. Per-doc `owner:` is now an OPTIONAL
+# override (v0.2.1) — set it on a doc only when its steward differs from this default.
+owner: "@landovsky"          # fill with the repo's steward handle
 
 # Where the governed artifacts live in this repo. Adjust to match the repo.
 paths:
   docs_dir: docs              # root of governed documentation
   index: MAIN.md              # generated documentation index / map
   types: docs/_types.yml      # repo-local `type` vocabulary definitions
-  decisions: docs/decisions   # ADRs (feed the ADR -> reference propagation edge)
+  decisions: docs/decisions   # the repo's ADR home — set to wherever ADRs live (docs/adr, …); feeds the ADR→reference edge
   doc_todo: .docgov/.doc-todo  # grandfather list of exempt pre-existing files
 
-# Behavioural switches. All default to MANUAL because the docgov CLI +
-# pinned install are deferred to a later phase.
+# Behavioural switches. `check`/`sweep` + CI are LIVE via the vendored bin/docgov;
+# index generation and the pinned pip install remain deferred.
 options:
-  tooling: manual  # docgov CLI + pin-install deferred; run checks by hand for now
-  index: manual    # regenerate the index by hand (no generator yet)
-  ci: stub         # shipped workflow is a placeholder; no gate enforced yet
+  tooling: vendored  # bin/docgov (copied from payload) provides `check` + `sweep`; pinned pip install deferred
+  index: manual      # regenerate the index by hand (no generator yet)
+  ci: active         # .github/workflows/docs.yml runs `python3 bin/docgov check` on every PR

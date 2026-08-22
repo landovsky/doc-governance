@@ -11,7 +11,7 @@
 # Rules of thumb:
 #   - `class` is closed & portable; `type` is local. Adding a type is ONE line — no model change.
 #   - `raw: true` ⟹ tier derives to `source` (never citeable) ⟹ the doc is immutable.
-#   - Attributes (audience, phase, domain, granularity, language) are NEVER types.
+#   - Attributes (phase, domain, language) are NEVER types.
 #   - Does NOT belong here: customer/bot copy → app/i18n or CMS; living item-lists → Issues/bd.
 
 # ── Universal core types (every repo) ─────────────────────────────────────────

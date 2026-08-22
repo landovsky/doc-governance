@@ -3,11 +3,8 @@ class: living
 type: entry
 tier: canonical
 title: "{{REPO_NAME}} — Documentation Governance"
-status: active
-owner: "{{OWNER}}"
-updated: "{{DATE}}"
 covers: [docs/_types.yml]
-last_verified: "{{DATE}}"
+last_verified: "{{DATE}}"   # steward attestation — today is honest for this freshly-authored doc
 description: >
   How this repo governs its docs: the class × tier × type model, the repo type enum,
   the 5-doc minimum set, and the (currently manual) enforcement.
@@ -16,7 +13,7 @@ description: >
 # {{REPO_NAME}} — Documentation Governance
 
 This repo follows the portable **documentation-governance model `{{MODEL_VERSION}}`**
-(default `0.2.0`). The normative master lives at
+(default `0.2.1`). The normative master lives at
 `~/.dotfiles/project-management/docs-governance/spec/model.md` — read it for rationale;
 this page is the in-repo, citable summary.
 
@@ -35,8 +32,7 @@ is **derived, never hand-set**.
 
 The types this repo recognizes — each declaring its default `class`, `raw:` flag, and
 required fields — live in **[`docs/_types.yml`](_types.yml)**. Adding a type is one line;
-it never changes the model. Attributes (audience, phase, domain, granularity, language)
-are never types.
+it never changes the model. Attributes (phase, domain, language) are never types.
 
 ## Minimum set (this repo carries all 5)
 

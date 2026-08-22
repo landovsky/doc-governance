@@ -3,12 +3,9 @@ class: living
 type: entry
 tier: canonical
 title: Docs-Governance System
-status: active
-owner: "@landovsky"
-updated: 2026-08-20
 covers: [spec/model.md, VERSION]
-last_verified: 2026-08-20
-description: Master entry for the portable documentation-governance system (model v0.2.0) — the class × tier × type model, its payload, guides, and current adoption status.
+last_verified: 2026-08-22
+description: Master entry for the portable documentation-governance system (model v0.2.1) — the class × tier × type model, its payload, guides, and current adoption status.
 ---
 
 # Docs-Governance System
@@ -21,11 +18,11 @@ gate, and a grandfather ratchet:
 - **tier** (citeability, *derived* from class + placement) — `canonical` / `source` / `archive`
 - **type** (repo-local vocabulary) — e.g. `entry`, `adr`, `reference`, `runbook`
 
-Current model version: **0.2.0** (see [`VERSION`](VERSION)).
+Current model version: **0.2.1** (see [`VERSION`](VERSION)).
 
 ## Directory map
 
-- **`spec/`** — the normative model: `model.md` (spec), `front-matter.md` (field reference), `deck.html` (explainer).
+- **`spec/`** — the normative model: `model.md` (spec), `front-matter.md` (field reference), `learn.html` (interactive explainer).
 - **`payload/`** — everything copied into an adopting repo (`.docgov/` config + `.github/` CI stub).
 - **`guides/`** — human playbooks: `INSTALL`, `MIGRATING`, `DIRTY-REPO-PLAYBOOK`, `AUTHORING`.
 - **`migrations/`** — version-to-version upgrade steps for the model.
@@ -41,8 +38,11 @@ Current model version: **0.2.0** (see [`VERSION`](VERSION)).
 - **Understanding the model?** → [`spec/model.md`](spec/model.md).
 - **Why is it built this way?** → [`PROVENANCE.md`](PROVENANCE.md).
 
-> ## STATUS — tooling deferred
-> The `docgov` Python CLI and its pinned install (`pipx install docgov==0.2.0`
-> in CI) are **deferred to a later phase**. For now, **adoption, indexing, and
-> checks are MANUAL** — the shipped CI workflow is a placeholder stub. The model
-> spec, front matter, and config templates are stable and usable today.
+> ## STATUS — checks & CI live; some tooling still deferred
+> **`bin/docgov` is real and the CI gate runs it:** `docgov check` (front matter,
+> classes, tiers, `covers[]`, on-use field contracts, dead internal links) and
+> `docgov sweep` (freshness drift) both work today, and `.github/workflows/` runs
+> `docgov check` on every PR. Still deferred: the **generated index** (`MAIN.md` is
+> hand-written), `docgov adopt`, and the pinned `pipx install docgov==<ver>` (the
+> vendored `bin/docgov` stands in until then). Model spec, front matter, and
+> templates are stable and usable today.

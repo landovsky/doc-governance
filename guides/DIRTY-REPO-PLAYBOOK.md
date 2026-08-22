@@ -3,13 +3,10 @@ class: living
 type: guide
 tier: canonical
 title: DIRTY-REPO-PLAYBOOK — Gradually migrate a messy repo to green
-status: active
-owner: "@landovsky"
-updated: 2026-08-20
 covers:
   - payload/.docgov/.doc-todo
   - spec/model.md
-last_verified: 2026-08-20
+last_verified: 2026-08-22
 description: >
   Gradually bring a messy repo to green: inventory the corpus with the reusable
   byte-reproducible census scripts, seed .doc-todo with every non-conformant
@@ -26,6 +23,11 @@ list and drain it over time. CI stays green throughout because it only ever chec
 
 > Run [INSTALL](INSTALL.md) first (copy `payload/`, pin the manifest). This playbook is the
 > extra work for a repo that already has legacy docs.
+
+> **Watch for colliding front matter.** An existing repo may already use keys the model reserves
+> (`status`, `owner`, `date`, `covers`, `tier`, … — the full set is in [`spec/front-matter.md`](../spec/front-matter.md))
+> with a *different* meaning; reconcile each to the model's semantics (or move the repo-local value to a
+> non-reserved key) as you clean the file — don't assume an existing `status:` already means what the model means.
 
 ---
 
@@ -97,6 +99,17 @@ Work the list highest-leverage first, not alphabetically:
 
 For each file: add/repair front matter (see [AUTHORING](AUTHORING.md)), fix dead links, make it
 reachable from `MAIN.md`, then delete its line from `.doc-todo`.
+
+> **Setting `last_verified` at backfill — adopted ≠ verified.** Adding front matter to a
+> pre-existing `living` doc is a **classification** act, not a **verification** act. Set
+> `last_verified` to the date the content was last genuinely confirmed — in practice the git
+> author-date of its last substantive edit — **not** today or the adoption date. If code has
+> moved since, the doc is *correctly* drift-stale and stays in the review queue until a steward
+> re-confirms it; that is the system working, not a failure to clear. Stamping today would bless
+> N unread docs as canonical in one PR — the exact competing-truth failure the model exists to
+> prevent. Removing a file from `.doc-todo` only asserts its front matter is **well-formed**, not
+> that its body is **current**; the honest `last_verified` is what carries the second claim, and
+> only a steward's sign-off moves it to today (see [AUTHORING](AUTHORING.md) golden rules).
 
 ## Step 5 — Done
 

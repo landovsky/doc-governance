@@ -5,9 +5,7 @@ tier: canonical
 id: "0001"
 title: Adopt the documentation-governance model
 date: "{{DATE}}"
-status: accepted
-superseded_by: none
-owner: "{{OWNER}}"
+superseded_by: none          # a path to the superseding doc once superseded (→ status: superseded)
 ---
 
 # ADR-0001 — Adopt the documentation-governance model
@@ -29,7 +27,7 @@ reading the body or by asking who wrote it.
 ## Decision
 
 Adopt the portable documentation-governance model, pinned at
-`model_version {{MODEL_VERSION}}` (`0.2.0`):
+`model_version {{MODEL_VERSION}}` (`0.2.1`):
 
 - **Three maintenance classes** — `immutable` (never edit, supersede) · `living` (keep
   fresh against `covers[]` code) · `transient` (edit until `status` resolves).

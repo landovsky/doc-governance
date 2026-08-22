@@ -2,25 +2,21 @@
 class: living
 tier: canonical              # derived: living + not-drifted + not-terminal
 type: model-spec             # repo-local type (_types.yml)
-title: Documentation Governance Model — v0.2
-status: active
-owner: "@landovsky"
-updated: 2026-08-20
+title: Documentation Governance Model — v0.2.1
 covers:
-  - spec/deck.html        # the slide deck must stay in sync with this spec
-last_verified: 2026-08-20
-audience: both
+  - spec/learn.html       # the teaching page must stay in sync with this spec
+last_verified: 2026-08-22
 description: >
   Portable documentation-governance model — three maintenance classes × a derived
   citeability tier × a repo-local type — with code-coupled freshness, a generated
-  index, and a CI gate. The normative model; the teaching artifact is spec/deck.html.
+  index, and a CI gate. The normative model; the teaching artifact is spec/learn.html.
 ---
 
-# Documentation Governance Model — v0.2
+# Documentation Governance Model — v0.2.1
 
 > **Portable model, not a hriste doc.** It is meant to be identical across every repo.
 > This is the **normative spec** (the model itself); the teaching artifact is
-> [`spec/deck.html`](deck.html). The working handoff (state + open items) is external
+> [`spec/learn.html`](learn.html). The working handoff (state + open items) is external
 > to this package. The v0.2 change over v0.1 is the **citeability `tier`** (§4); v0.1 had none.
 
 ## 1. Thesis
@@ -39,7 +35,7 @@ model**, adopting via a shrink-only grandfather list.
 class   (model layer, CLOSED)      — maintenance: how / whether to keep it fresh
 tier    (DERIVED, never hand-set)  — citeability: canonical | source | archive
 type    (repo layer, OPEN)         — semantic label in docs/_types.yml; declares its default class
-attributes (per document)          — audience | phase | granularity | domain | language
+attributes (per document)          — phase | domain | language
 ```
 
 `class ⊥ tier ⊥ type`. This is the v0.1→v0.2 fix: v0.1's `immutable` answered two questions at once
@@ -63,14 +59,14 @@ default class — that is where product-specific needs live (`seo-audit`, `gitop
 |---|---|---|
 | **canonical** | yes — trust it as what its `type` says it is | class ∈ {immutable, living}, type not raw, not terminal |
 | **source** | **no** — inform only, weight by `event_date` | the `type` is declared *raw* in `_types.yml` (`transcript`, `audit`, `research`, `experiment`) |
-| **archive** | no — history only | terminal: transient resolved-&-unpromoted · immutable superseded · living retired |
+| **archive** | no — history only | terminal: transient resolved-&-unpromoted · immutable superseded · living archived (covers[] gone) |
 
 ### The `class × tier` grid (what the split buys)
 
 |              | canonical — *cite* | source — *never cite* | archive — *history* |
 |--------------|--------------------|-----------------------|---------------------|
 | **immutable**| **ADR**            | **transcript · audit**| superseded ADR      |
-| **living**   | reference · domain-doc · runbook · index | — | retired reference |
+| **living**   | reference · domain-doc · runbook · index | — | archived reference |
 | **transient**| active brief / spec *(as plan)* | — | shipped / dropped spec |
 
 `immutable` no longer means one thing: **immutable × canonical = ADR** (cite it),
@@ -82,32 +78,50 @@ default class — that is where product-specific needs live (`seo-audit`, `gitop
 
 ## 5. Front-matter schema
 
-**Always required (core):** `class`, `type`, `title`, `status`, `owner` — **plus a date-of-record**:
-`updated` (content last changed) for `living` and `transient`; `date` (moment it is true as of) for
-`immutable` and `source`. Immutable & source carry `date` + `status`, **not** `updated`.
+**Always required (core):** `class`, `type`, `title`. Nothing else is universal — everything below
+is conditional on class, derived, or optional. (v0.2.1 removed `status`, `owner`, and `updated` from
+the universal core; see §12.)
 **Conditional by class:**
-- `immutable` → `date` (its date-of-record; no `updated`)
-- `living` → `covers[]` **and** `last_verified` *(a `last_verified` with no `covers[]` is rejected — a freshness promise with nothing to check is the undead field both repos already carry)*
-- `transient` → `status` from a closed enum **with a terminal done-state** (`draft | active | shipped | superseded | archived | killed | stale`; `stale` is set by the nightly sweep, not by hand)
+- `immutable` (non-raw) → `date` (the moment it is true as of); a **raw** immutable doc uses `event_date` (below), not `date`
+- `living` → `covers[]` **and** `last_verified` *(a `last_verified` with no `covers[]` is rejected — a freshness promise with nothing to check is the undead field both repos already carry)*. **`last_verified` is a steward attestation, not a machine check result:** a human sets it when they have re-confirmed the doc against its `covers[]`. An agent may run the check and *propose* a value, but **never stamps today's date on its own judgment** — symmetric to `stale`, which only the nightly sweep sets. (A clean automated scan means "no conflict found," not "a steward vouches for this"; only the latter may bump the field that `CITABLE` trusts.)
+- `transient` → `status` from a closed enum **with a terminal done-state** (`draft | active | shipped | superseded | archived | killed | stale`; `stale` is set by the nightly sweep, not by hand). *This `status` is the only class-level requirement.* `ships:` (the #PR/issue that retires it) is a model-layer **optional** attribute (its role is the retire-on-ship link); a repo can make it **required** on a specific transient *type* via `_types.yml` (§10) — this package does on `spec`, so a `spec` must carry `ships` here, while a `pitch`/`brief` need not.
 - raw types (`source` tier) → `event_date`, and `source_of:` once distilled
 - **`entry`-type living docs** → `covers[]` lists the docs/config the entry indexes or mirrors (not code); they still carry `last_verified`.
-**Derived (never hand-set):** `tier`.
-**Optional attributes:** `audience` (human|agent|both), `phase` (pitch|brief|spec — transient only),
-`genre` (transcript|audit|research|experiment — raw types), `granularity`, `domain`,
-`language` (cs|en), `description` (drives the index line), `registry` (always|decide|none),
-`promoted_to` / `superseded_by`, `ships` (#PR/issue that retires a transient).
+
+**`status` is authored only on `transient`.** For `living` it **derives** to `active | stale | archived`
+(the sweep sets `stale` when covered code drifts; a living doc whose `covers[]` paths all cease to exist is
+terminal → mark `status: archived`, which derives `tier: archive`); for `immutable` to `accepted | superseded`
+(from `superseded_by`). Write it on a `living`/`immutable` doc **only when non-default** — so a bare
+`grep -r 'status:'` returns exactly the drifted / archived / superseded docs. Absent `status` means the
+derived default via `status(doc)` (§6): `active` for living, `accepted` for non-raw immutable; a raw /
+`source`-tier doc has **no meaningful status** (leave it off — `tier: source` already blocks citation).
+**`owner` is a repo-level default** in `.docgov/manifest.yml`; a per-doc `owner:` is an **optional
+override** for a doc with a different steward. The sweep notifies the doc's owner, or the manifest
+default when none is set.
+**There is no `updated` field.** Content-last-changed is read from git (`git log -1`); front matter keeps
+only the temporal anchors git cannot derive — `date`, `event_date`, `last_verified`.
+**Derived (never hand-set):** `tier` (§4); and `status` for `living` / `immutable` (above).
+**Optional attributes:** `phase` (pitch|brief|spec — transient only), `genre`
+(transcript|audit|research|experiment — raw types), `domain`, `language` (cs|en),
+`description` (drives the index line), `registry` (always|decide|none),
+`promoted_to` / `superseded_by`, `ships` (#PR/issue that retires a transient), `owner` (per-doc override).
 
 ## 6. The freshness contract (the one predicate an agent runs)
 
 ```
 CITABLE(doc) :=
       doc.tier == canonical
-  AND doc.status ∈ {active, accepted, generated}
+  AND status(doc) ∈ {active, accepted, generated}      # DERIVED (below) — never a bare doc.status
   AND ( doc.class == immutable                         # cite as of its date
         OR ( doc.class == living
              AND now ≤ last_verified + TTL(type)
              AND every path in covers[] exists in THIS repo
              AND no covers[] path has a commit newer than last_verified ))
+# status(doc) := doc.status if present (always on transient; a non-default value on living/immutable)
+#             else living    → active                            # derived default
+#             else immutable → superseded  if superseded_by set
+#                              accepted     else if type not raw  # ADR / record default
+#                              n/a          else                  # raw/source: status not a meaningful axis
 # tier == source            → never citeable (inform only, weight by event_date)
 # transient (active)        → citeable as intent, NOT as current system state
 # tier == archive / terminal → history only
@@ -146,7 +160,7 @@ type with an advancing `phase` (avoids proliferation).
 | `MAIN.md` | living / entry (**generated** index) | the one navigation surface; generated so it can't fork into disagreeing copies |
 | `CLAUDE.md` = `AGENTS.md` | living / entry (agent) | conventions; without it agents import foreign process |
 | `docs/governance.md` | living / entry | this grammar, in-repo & citable (may fold into `MAIN.md` for small repos) |
-| `docs/decisions/` + `ADR-0001` | immutable / decision | rationale is the one thing code can't encode; ADR-0001 = "adopt this model" |
+| an *adopt-this-model* ADR | immutable / adr | rationale is the one thing code can't encode. Lives in the repo's ADR home (`.docgov/manifest.yml:paths.decisions`), per its numbering/format — not a fixed path. |
 
 The generated index (`registry.json`) is an **artifact**, not a sixth hand-kept file.
 
@@ -174,3 +188,27 @@ The generated index (`registry.json`) is an **artifact**, not a sixth hand-kept 
 - **+ `ships:` link + retire-on-ship gate** so a transient's resolution is derived, not a hand-set status that can itself drift.
 - **+ out-of-scope guardrail** on the open `_types.yml`; **+ concrete minimum set**.
 - **Kept from v0.1:** two-layer model/repo split; `class` primary with `type` a repo label; `.doc-todo` grandfathering.
+
+## 12. v0.2 → v0.2.1 changelog
+
+Readability cull — trim the front-matter surface to fields something actually *consumes*, and formalise
+the trust field the `living` class hangs on.
+
+- **− `updated`** from the required core. Nothing read it (`CITABLE`, tier derivation, and the sweep
+  never did); git already shadows "content last changed" (`git log -1`). Kept the anchors git *cannot*
+  derive — `date`, `event_date`, `last_verified`. Deleting an unread required field is the same
+  undead-field logic that already rejects a `last_verified` with no `covers[]`.
+- **− `audience`** and **− `granularity`** — descriptive attributes no rule consumes; `audience` was
+  `both` most of the time, so it carried no signal. Filter on `type` instead. Re-add either with teeth
+  (a real consumer) if one ever lands.
+- **`status` authored only on `transient`.** For `living` / `immutable` it derives (`active|stale|archived`,
+  `accepted|superseded`) and is surfaced only when non-default — which turns `grep status:` into the
+  stale/archived worklist.
+- **`owner` → manifest default + optional per-doc override.** A single-steward repo stops copying the
+  same handle onto every file; the sweep falls back to `.docgov/manifest.yml:owner`.
+- **`last_verified` is a steward attestation** (§5): an agent may propose a value or report a clean check
+  but never stamps today's date on its own judgment; backfill uses the last genuine-confirmation date
+  (**adopted ≠ verified**). Formalises the one field the whole `living`-class trust computation depends on.
+
+New required core: `class`, `type`, `title` + the class's date-of-record.
+Migration: [`../migrations/0.2.0-to-0.2.1.md`](../migrations/0.2.0-to-0.2.1.md).

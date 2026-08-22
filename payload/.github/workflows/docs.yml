@@ -1,9 +1,16 @@
-# docs-governance CI — PLACEHOLDER STUB.
+# docs-governance CI — the real gate (vendored, dependency-free).
 #
-# The docgov CLI and its pinned install are DEFERRED. Until they land, doc
-# governance is enforced MANUALLY. This workflow only prints a reminder; it
-# never fails a PR. The commented lines below show exactly where the real
-# checks will slot in once `docgov` ships.
+# Two tiers, matching model §9:
+#   check  — BLOCKING structural gate: front matter, classes, tiers, covers[]
+#            existence, on-use field contracts, dead internal links, ADR
+#            heading==filename. (Still deferred: generated-index verification
+#            §9.2 and the retire-on-ship gate §9.4.)
+#   drift  — NON-BLOCKING freshness sweep (§9.5): advises when a covers[] path
+#            moved past last_verified. Never blocks a merge — re-attestation is
+#            a steward's call, not a red build.
+#
+# `docgov` is vendored at bin/docgov; swap for a pinned `pipx install docgov==<ver>`
+# once that ships (same check semantics).
 name: docs-governance
 
 on:
@@ -11,23 +18,33 @@ on:
     paths:
       - "docs/**"
       - "MAIN.md"
+      - "README.md"
+      - "CLAUDE.md"
+      - "AGENTS.md"
       - ".docgov/**"
+      - "bin/docgov"
+  schedule:
+    - cron: "0 6 * * *"        # nightly freshness sweep
+  workflow_dispatch:
 
 jobs:
-  docs:
+  check:                        # blocking gate
+    if: github.event_name != 'schedule'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+      - name: docgov check
+        run: python3 bin/docgov check
 
-      - name: Notice (manual until docgov CLI lands)
+  drift:                        # advisory freshness sweep — never blocks
+    runs-on: ubuntu-latest
+    continue-on-error: true
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0        # sweep's commit-drift arm needs full history
+      - name: docgov sweep (advisory)
         run: |
-          echo "doc-governance checks are MANUAL until the docgov CLI lands."
-          echo "See guides/INSTALL.md for the manual workflow. This step never fails."
-
-      # --- Deferred: enable once docgov ships (model v0.2.0) ---
-      # - name: Install docgov
-      #   run: pipx install docgov==0.2.0
-      # - name: Lint front matter and classes
-      #   run: docgov lint
-      # - name: Verify generated index is current
-      #   run: docgov index --check
+          python3 bin/docgov sweep | tee -a "$GITHUB_STEP_SUMMARY"
+          python3 bin/docgov sweep --exit-code \
+            || echo "::warning::docs drifted — a covers[] path changed since last_verified; a steward should re-read and re-attest."

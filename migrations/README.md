@@ -3,13 +3,10 @@ class: living
 type: guide
 tier: canonical
 title: migrations/ — how model-version migrations work
-status: active
-owner: "@landovsky"
-updated: 2026-08-20
 covers:
   - VERSION
   - payload/.docgov/manifest.yml
-last_verified: 2026-08-20
+last_verified: 2026-08-22
 description: >
   How doc-governance migrations work: one guide per version hop named
   <from>-to-<to>.md, applied transitively, driven by manifest.model_version;
@@ -53,9 +50,10 @@ guide, bump the field. Nothing else tracks a repo's model version.
 When you cut a new model version, add `migrations/<prev>-to-<new>.md` in the **same change** that
 bumps `VERSION` and `CHANGELOG.md`. Structure it as:
 
-1. **Front matter** — dogfood it: `class: immutable`, `type: migration`, `date:` (the release
-   date; a migration guide is frozen once its hop is released — supersede, don't rewrite),
-   `title`, `status: accepted`, `owner`, `updated`. `tier` derives to `canonical`.
+1. **Front matter** — dogfood it: `class: immutable`, `type: migration-guide`, `date:` (the release
+   date; a migration guide is frozen once its hop is released — supersede, don't rewrite), `title`,
+   `superseded_by: none`. `tier` derives to `canonical` and `status` derives to `accepted`; `owner`
+   comes from the manifest — none of the three are authored on the guide (v0.2.1).
 2. **What changed** — the schema/layout deltas a repo must absorb, tied to the `CHANGELOG.md`
    entry for `<new>`.
 3. **Per-file manual steps** — an ordered, mechanical checklist an operator can apply by hand

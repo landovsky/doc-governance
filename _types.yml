@@ -15,14 +15,14 @@
 # Rules of thumb (identical to the payload schema):
 #   - `class` is closed & portable; `type` is local. Adding a type is ONE line — no model change.
 #   - `raw: true` ⟹ tier derives to `source` (never citeable) ⟹ the doc is immutable.
-#   - Attributes (audience, phase, domain, granularity, language) are NEVER types.
+#   - Attributes (phase, domain, language) are NEVER types.
 #   - `tier` is DERIVED, never declared by a type or by hand.
 #
 # ── OUT of governance scope (no front matter required) ────────────────────────
 #   - payload/**   — distributable template files; validated when INSTANTIATED in a target repo.
 #   - examples/**  — distributable example artifacts; same reason (validated on instantiation).
-#   - spec/deck.html — an HTML teaching artifact (no YAML front matter); it is a COMPANION
-#                      of spec/model.md, tracked via that spec's `covers:` list.
+#   - spec/learn.html — an interactive HTML teaching page (no YAML front matter); it is a COMPANION
+#                       of spec/model.md, tracked via that spec's `covers:` list.
 #   - VERSION      — data, not a document.
 #
 # The master's GOVERNANCE RULES are not a separate governance.md — they ARE

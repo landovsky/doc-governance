@@ -3,14 +3,11 @@ class: living
 type: guide
 tier: canonical
 title: MIGRATING — Move a repo between model versions
-status: active
-owner: "@landovsky"
-updated: 2026-08-20
 covers:
   - payload/.docgov/manifest.yml
   - migrations/README.md
   - VERSION
-last_verified: 2026-08-20
+last_verified: 2026-08-22
 description: >
   Move an adopted repo between model versions: read its .docgov/manifest.yml
   model_version, compare to the master VERSION, apply migrations/<from>-to-<to>.md
@@ -31,7 +28,7 @@ codemod (`docgov migrate`) is **DEFERRED** — **TODO (tooling, later)**.
 
 ```
 grep model_version ~/git/<REPO>/.docgov/manifest.yml     # e.g. 0.1.0
-cat $MASTER/VERSION                                       # e.g. 0.2.0
+cat $MASTER/VERSION                                       # e.g. 0.2.1
 ```
 
 If they match, there is nothing to do. If the manifest is **behind** `VERSION`, you have one or

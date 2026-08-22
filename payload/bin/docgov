@@ -1,0 +1,508 @@
+#!/usr/bin/env python3
+"""docgov — interim CLI for the documentation-governance model (v0.2.x).
+
+Dependency-free, self-contained. Two subcommands:
+
+  docgov sweep [--write]   freshness sweep — list living docs whose covers[] drifted
+                           past last_verified; --write stamps `status: stale` on them
+                           (the machine-set marker; never hand-authored).
+  docgov check             lint — print every governed doc that violates the model.
+                           Honors .docgov/.doc-todo; exits non-zero on any violation.
+
+Two rules govern the field checks below:
+  · Optional fields are validated ONLY when present — because the code leans on them
+    (an absent `superseded_by` is fine; a present one must be a path to an immutable).
+  · The rule set grows ADDITIVELY — adding a check for a new optional field is a line
+    here, no migration. Only removals / renames / retypes are breaking.
+
+Scope: the repo/package rooted at the nearest ancestor containing `.docgov/`.
+Governed = every *.md under it except payload/** and examples/** (templates/companions).
+"""
+import argparse, datetime, os, re, subprocess, sys
+
+CLASSES = {"immutable", "living", "transient"}
+STATUS_ENUM = {"draft", "active", "shipped", "superseded", "archived", "killed",
+               "stale", "accepted", "generated"}
+REMOVED = {"updated", "audience", "granularity"}            # removed in v0.2.1
+TERMINAL_STATUS = {"shipped", "superseded", "archived", "killed"}
+LIVING_OK = {"stale", "archived"}          # only non-default status values on living
+IMMUT_OK = {"superseded"}                  # only non-default status value on non-raw immutable
+DATE_FIELDS = {"date", "event_date", "last_verified"}
+ENUM_FIELDS = {"phase": {"pitch", "brief", "spec"},
+               "genre": {"transcript", "audit", "research", "experiment"},
+               "language": {"cs", "en"}, "registry": {"always", "decide", "none"}}
+# on-use link contracts: field -> required target class (None = just-must-exist)
+LINK_TARGET = {"superseded_by": "immutable", "promoted_to": "living", "source_of": None}
+
+
+def key_line(path, key):
+    """1-based line number of `^key:` in a file (for clickable path:line), else 1."""
+    for i, ln in enumerate(_read(path).splitlines(), 1):
+        if re.match(rf"^{re.escape(key)}:", ln):
+            return i
+    return 1
+
+
+def sh(*args):
+    try:
+        return subprocess.check_output(args, stderr=subprocess.DEVNULL).decode().strip()
+    except subprocess.CalledProcessError:
+        return ""
+
+
+def find_root():
+    d = os.getcwd()
+    while True:
+        if os.path.isdir(os.path.join(d, ".docgov")):
+            return d
+        parent = os.path.dirname(d)
+        if parent == d:
+            sys.exit("docgov: no .docgov/ found in this directory or any parent")
+        d = parent
+
+
+def _scalar(val):
+    """Strip a trailing ` # comment` but preserve a quoted value like \"#821\"."""
+    if val[:1] in ('"', "'"):
+        q = val[0]
+        e = val.find(q, 1)
+        return val[1:e] if e > 0 else val.strip(q)
+    return val.split(" #")[0].strip()
+
+
+def _read(path):
+    with open(path, encoding="utf-8") as f:
+        return f.read()
+
+
+def _is_iso_date(s):
+    """True only for a real YYYY-MM-DD calendar date (rejects e.g. 2026-13-99)."""
+    if not re.match(r"^\d{4}-\d{2}-\d{2}$", s):
+        return False
+    try:
+        datetime.date.fromisoformat(s)
+        return True
+    except ValueError:
+        return False
+
+
+def parse_fm(text):
+    """Return (fields: dict, covers: list) from the leading --- front matter, or None."""
+    m = re.match(r"^---\n(.*?)\n---", text, re.S)
+    if not m:
+        return None
+    fields, covers = {}, []
+    lines = m.group(1).splitlines()
+    i = 0
+    while i < len(lines):
+        ln = lines[i]
+        mk = re.match(r"^([A-Za-z_][\w-]*):\s?(.*)$", ln)
+        if mk:
+            key, val = mk.group(1), mk.group(2).strip()
+            if key == "covers":
+                if val.startswith("["):
+                    covers = [c.strip().strip('"') for c in val.strip("[]").split(",") if c.strip()]
+                else:
+                    j = i + 1
+                    block = []
+                    while j < len(lines) and lines[j].lstrip().startswith("-"):
+                        item = lines[j].lstrip()[1:].split(" #")[0].strip().strip('"')
+                        if item:
+                            block.append(item)
+                        j += 1
+                    if block:
+                        covers = block
+                        i = j - 1
+                    elif val:                       # bare scalar form: `covers: some/path.md`
+                        covers = [_scalar(val)]
+            else:
+                fields[key] = _scalar(val)
+        i += 1
+    return fields, covers
+
+
+def load_types(root):
+    """Minimal parser for _types.yml → {type: {class, raw, requires:[...]}}."""
+    path = os.path.join(root, "_types.yml")
+    if not os.path.exists(path):
+        path = os.path.join(root, "docs", "_types.yml")
+    types, cur = {}, None
+    for ln in (_read(path).splitlines() if os.path.exists(path) else []):
+        if not ln.strip() or ln.lstrip().startswith("#"):
+            continue
+        top = re.match(r"^([A-Za-z_][\w-]*):\s*(#.*)?$", ln)
+        if top:
+            cur = top.group(1)
+            types[cur] = {"class": None, "raw": False, "requires": []}
+            continue
+        nested = re.match(r"^\s+([A-Za-z_]+):\s*(.*)$", ln)
+        if nested and cur:
+            k, v = nested.group(1), nested.group(2).split("#")[0].strip()
+            if k == "class":
+                types[cur]["class"] = v
+            elif k == "raw":
+                types[cur]["raw"] = v.lower() == "true"
+            elif k == "requires":
+                types[cur]["requires"] = [x.strip() for x in v.strip("[]").split(",") if x.strip()]
+    return types
+
+
+def manifest_scope(root):
+    """(docs_dir, index_file) from .docgov/manifest.yml, or (None, None)."""
+    p = os.path.join(root, ".docgov", "manifest.yml")
+    docs_dir = index = None
+    if os.path.exists(p):
+        for ln in _read(p).splitlines():
+            m = re.match(r"^\s*docs_dir:\s*(\S+)", ln)
+            if m:
+                docs_dir = m.group(1).strip().strip('"')
+            m = re.match(r"^\s*(?:index|index_file):\s*(\S+)", ln)
+            if m:
+                index = m.group(1).strip().strip('"')
+    return docs_dir, index
+
+
+def governed_docs(root):
+    """Governed *.md. If the manifest sets a `docs_dir`, scope to it + the named core
+    files (an adopting repo, so vendor/, .venv/ … are ignored); otherwise walk the
+    whole package excluding templates (the flat, self-governing master)."""
+    docs_dir, index = manifest_scope(root)
+    if docs_dir and docs_dir not in (".", "./", ""):
+        base = os.path.join(root, docs_dir)
+        for dp, dirs, files in os.walk(base):
+            dirs[:] = [d for d in dirs if d not in (".git", "node_modules")]
+            for f in files:
+                if f.endswith(".md"):
+                    yield os.path.join(dp, f)
+        for c in {index or "MAIN.md", "README.md", "CLAUDE.md", "AGENTS.md"}:
+            fp = os.path.join(root, c)
+            if os.path.isfile(fp):
+                yield fp
+    else:
+        for dp, dirs, files in os.walk(root):
+            dirs[:] = [d for d in dirs if d not in (".git", "payload", "examples", "node_modules")]
+            for f in files:
+                if f.endswith(".md"):
+                    yield os.path.join(dp, f)
+
+
+def doc_todo(root):
+    p = os.path.join(root, ".docgov", ".doc-todo")
+    if not os.path.exists(p):
+        return set()
+    return {ln.split("#")[0].strip() for ln in _read(p).splitlines() if ln.split("#")[0].strip()}
+
+
+def target_class(root, relpath):
+    full = os.path.normpath(os.path.join(root, relpath))
+    if not (relpath.endswith(".md") and os.path.exists(full)):
+        return None
+    parsed = parse_fm(_read(full))
+    return parsed[0].get("class") if parsed else None
+
+
+def expected_tier(fields, traw):
+    st = fields.get("status", "")
+    sup = fields.get("superseded_by", "none")
+    if fields.get("class") == "immutable" and sup not in ("", "none"):
+        return "archive"
+    if st in TERMINAL_STATUS:
+        return "archive"
+    if traw:
+        return "source"
+    return "canonical"
+
+
+# ── sweep ──────────────────────────────────────────────────────────────────
+def dirty_set():
+    # NB: do NOT route through sh() — its .strip() would eat the leading status
+    # space of the first porcelain line and shift `line[3:]` off by one.
+    try:
+        raw = subprocess.check_output(["git", "status", "--porcelain"],
+                                      stderr=subprocess.DEVNULL).decode()
+    except subprocess.CalledProcessError:
+        return set()
+    out = set()
+    for line in raw.splitlines():
+        if not line:
+            continue
+        path = line[3:]                          # porcelain: 2 status chars + space + path
+        if " -> " in path:
+            path = path.split(" -> ")[-1]
+        out.add(path.strip().strip('"'))
+    return out
+
+
+def rel_to_repo(root, doc_relpath):
+    # realpath both sides so a symlinked checkout (e.g. macOS /var → /private/var)
+    # still matches the toplevel-relative paths `git status --porcelain` emits.
+    repo = sh("git", "rev-parse", "--show-toplevel") or root
+    return os.path.relpath(os.path.realpath(os.path.join(root, doc_relpath)),
+                           os.path.realpath(repo))
+
+
+def cmd_sweep(root, args):
+    dirty = dirty_set()
+    drifted = []
+    for doc in sorted(governed_docs(root)):
+        parsed = parse_fm(_read(doc))
+        if not parsed:
+            continue
+        fields, covers = parsed
+        if fields.get("class") != "living" or "last_verified" not in fields or not covers:
+            continue
+        lv = fields["last_verified"]
+        reasons = []
+        for c in covers:
+            cpath = os.path.normpath(os.path.join(root, c))
+            if not os.path.exists(cpath):
+                reasons.append(f"{c}: MISSING")
+                continue
+            repo_rel = rel_to_repo(root, c)
+            if repo_rel in dirty:
+                reasons.append(f"{c}: changed in working tree")
+            else:
+                cd = sh("git", "log", "-1", "--format=%cs", "--", cpath)
+                if cd and cd > lv:
+                    reasons.append(f"{c}: commit {cd} > last_verified {lv}")
+        if reasons:
+            drifted.append((doc, lv, reasons))
+
+    for path, lv, reasons in drifted:
+        print(f"DRIFT  {path}:{key_line(path, 'last_verified')}  (last_verified={lv})")
+        for r in reasons:
+            print(f"         └─ {r}")
+    print(f"\n{len(drifted)} drifted / needing re-attestation.")
+    if args.write and drifted:
+        for path, _, _ in drifted:
+            mark_stale(path)
+        print(f"Marked status: stale on {len(drifted)} docs. Find them: grep -rn '^status: stale'")
+    elif drifted:
+        print("Re-run with --write to stamp `status: stale` on them.")
+    return len(drifted)
+
+
+def mark_stale(path):
+    text = _read(path)
+    m = re.match(r"^(---\n.*?\n---)", text, re.S)
+    fm, rest = m.group(1), text[m.end():]
+    if re.search(r"^status:", fm, re.M):
+        fm = re.sub(r"^status:.*$", "status: stale", fm, count=1, flags=re.M)
+    else:
+        for anchor in (r"^(class:.*)$", r"^(type:.*)$"):     # insert after class:, else type:
+            new, n = re.subn(anchor, r"\1\nstatus: stale", fm, count=1, flags=re.M)
+            if n:
+                fm = new
+                break
+        else:                                                # neither key found → after opening ---
+            fm = fm.replace("---", "---\nstatus: stale", 1)
+    with open(path, "w", encoding="utf-8") as f:
+        f.write(fm + rest)
+
+
+# ── check (lint) ─────────────────────────────────────────────────────────────
+def cmd_check(root, types):
+    todo = doc_todo(root)
+    bad = 0
+    for doc in sorted(governed_docs(root)):
+        if os.path.relpath(doc, root) in todo:
+            continue
+        v = lint_doc(root, doc, types)
+        if v:
+            bad += 1
+            print(f"✗ {doc}")
+            for msg, key in v:
+                loc = f"  → {doc}:{key_line(doc, key)}" if key else ""
+                print(f"    - {msg}{loc}")
+    if bad == 0:
+        print("✓ all governed docs compliant")
+        return 0
+    print(f"\n{bad} non-compliant doc(s).")
+    return 1
+
+
+def dead_body_links(root, doc):
+    """Dead internal links in the markdown BODY (after front matter).
+
+    Scans inline `[text](target)` links, skipping fenced code blocks and inline
+    code spans. A target is checkable only if it is a local path (no scheme, not
+    a pure #anchor, not protocol-relative //). The #fragment is stripped and the
+    path is resolved relative to the doc's directory (root-relative /path → root).
+    A link is dead when the resolved path exists as neither file nor directory.
+    Findings embed their own clickable ({doc}:{lineno}) since the location is in
+    the body, not a front-matter key.
+    """
+    text = _read(doc)
+    lines = text.splitlines()
+    start = 0
+    if lines and lines[0].strip() == "---":                 # skip leading front matter
+        for i in range(1, len(lines)):
+            if lines[i].strip() == "---":
+                start = i + 1
+                break
+    docdir = os.path.dirname(doc)
+    fence_re = re.compile(r"^\s*(```|~~~)")
+    link_re = re.compile(r"\[[^\]]*\]\(([^)]+)\)")           # inline [text](target)
+    refdef_re = re.compile(r"^\s{0,3}\[[^\]]+\]:\s+(\S+)")   # reference def  [id]: target
+    code_span = re.compile(r"`[^`]*`")
+    out = []
+
+    def check(target, idx):
+        target = target.strip()
+        if target.startswith("<") and ">" in target:        # <path>
+            target = target[1:target.index(">")]
+        else:
+            target = target.split(" ", 1)[0]                # drop "title"
+        if not target or target.startswith("#") or target.startswith("//"):
+            return
+        if re.match(r"^[A-Za-z][A-Za-z0-9+.\-]*:", target):  # http:, mailto:, any scheme:
+            return
+        path = target.split("#", 1)[0]                       # strip #fragment
+        if not path:
+            return
+        if path.startswith("/"):                             # root-relative → repo root
+            resolved = os.path.normpath(os.path.join(root, path.lstrip("/")))
+        else:
+            resolved = os.path.normpath(os.path.join(docdir, path))
+        if not os.path.exists(resolved):
+            out.append((f"dead link: {path} → target not found  ({doc}:{idx + 1})", None))
+
+    in_fence = False
+    for idx in range(start, len(lines)):
+        raw = lines[idx]
+        if fence_re.match(raw):
+            in_fence = not in_fence
+            continue
+        if in_fence:
+            continue
+        md = refdef_re.match(raw)                            # reference-style definition
+        if md:
+            check(md.group(1), idx)
+            continue
+        for m in link_re.finditer(code_span.sub("", raw)):   # inline links (code spans dropped)
+            check(m.group(1), idx)
+    return out
+
+
+def lint_doc(root, doc, types):
+    text = _read(doc)
+    parsed = parse_fm(text)
+    if not parsed:
+        return [("no front matter", None)]
+    fm, covers = parsed
+    out = []
+    cls, typ = fm.get("class"), fm.get("type")
+    tdef = types.get(typ)
+    traw = bool(tdef and tdef["raw"])
+    present = set(fm) | ({"covers"} if covers else set())
+
+    # required core + removed keys + basic enums
+    for k in ("class", "type", "title"):
+        if k not in fm:
+            out.append((f"missing required core key: {k}", None))
+    for k in REMOVED:
+        if k in fm:
+            out.append((f"forbidden key (removed in v0.2.1): {k}", k))
+    if cls and cls not in CLASSES:
+        out.append((f"class not in enum: {cls}", "class"))
+    if typ and not tdef:
+        out.append((f"unknown type (not in _types.yml): {typ}", "type"))
+
+    # conditional-by-class date-of-record / required keys
+    if cls == "immutable":
+        if traw:
+            if "event_date" not in fm:
+                out.append(("raw/source immutable: missing event_date", None))
+        elif "date" not in fm:
+            out.append(("non-raw immutable: missing date", None))
+    elif cls == "living":
+        if not covers:
+            out.append(("living: missing covers[]", None))
+        if "last_verified" not in fm:
+            out.append(("living: missing last_verified", None))
+    elif cls == "transient":
+        if "status" not in fm:
+            out.append(("transient: missing status", None))
+
+    # status enum + discipline
+    st = fm.get("status")
+    if st and st not in STATUS_ENUM:
+        out.append((f"status not in enum: {st}", "status"))
+    if st and cls == "living" and st not in LIVING_OK:
+        out.append((f"living must not hand-set status={st} (derives; only {sorted(LIVING_OK)})", "status"))
+    if st and cls == "immutable" and not traw and st not in IMMUT_OK:
+        out.append((f"non-raw immutable must not hand-set status={st} (derives; only {sorted(IMMUT_OK)})", "status"))
+    if st and traw:
+        out.append((f"raw/source doc must not carry status={st} (no meaningful status)", "status"))
+
+    # tier is derived — if authored it must match
+    if "tier" in fm:
+        exp = expected_tier(fm, traw)
+        if fm["tier"] != exp:
+            out.append((f"tier={fm['tier']} disagrees with derived {exp}", "tier"))
+
+    # ── on-use checks: validated ONLY when the field is present ──
+    for f, allowed in ENUM_FIELDS.items():
+        if f in fm and fm[f] not in allowed:
+            out.append((f"{f}={fm[f]} not in {sorted(allowed)}", f))
+    if "phase" in fm and cls != "transient":
+        out.append(("phase is transient-only", "phase"))
+    if "genre" in fm and not traw:
+        out.append(("genre is for raw/source types only", "genre"))
+    for f in DATE_FIELDS:
+        if f in fm and not _is_iso_date(fm[f]):
+            out.append((f"{f}={fm[f]!r} is not a valid ISO date (YYYY-MM-DD)", f))
+    if "ships" in fm and not re.match(r"^#\w+$", fm["ships"]):
+        out.append((f"ships={fm['ships']!r} must be a #<ref>", "ships"))
+    for c in covers:                                    # covers[]: paths must exist
+        if not os.path.exists(os.path.normpath(os.path.join(root, c))):
+            out.append((f"covers[] path does not exist: {c}", "covers"))
+    for f, wantcls in LINK_TARGET.items():              # transformation links: path (+ target class)
+        v = fm.get(f)
+        if v and v != "none":
+            if not os.path.exists(os.path.normpath(os.path.join(root, v))):
+                out.append((f"{f}: path does not exist: {v}", f))
+            elif wantcls and target_class(root, v) != wantcls:
+                out.append((f"{f}: target {v} is class {target_class(root, v)}, expected {wantcls}", f))
+
+    # type-declared requires (repo layer, from _types.yml)
+    if tdef:
+        for req in tdef["requires"]:
+            if req not in present:
+                out.append((f"type '{typ}' requires '{req}' (missing)", None))
+
+    # ADR heading number must match the filename number (model §9.3)
+    if typ == "adr":
+        base = os.path.basename(doc)
+        fnum = re.match(r"^0*(\d+)", base)
+        h1 = next((l for l in text.splitlines() if l.startswith("# ")), None)
+        if fnum and h1:
+            hnum = re.search(r"\b0*(\d+)\b", h1)
+            if not hnum or int(hnum.group(1)) != int(fnum.group(1)):
+                hn = hnum.group(0) if hnum else "(none)"
+                out.append((f"ADR heading number {hn} does not match filename {base}", None))
+
+    out.extend(dead_body_links(root, doc))                  # dead internal links in body
+    return out
+
+
+def main():
+    ap = argparse.ArgumentParser(prog="docgov")
+    sub = ap.add_subparsers(dest="cmd", required=True)
+    sw = sub.add_parser("sweep", help="find drifted living docs")
+    sw.add_argument("--write", action="store_true", help="stamp status: stale on drifted docs")
+    sw.add_argument("--exit-code", action="store_true",
+                    help="exit non-zero if any doc drifted (for a non-blocking CI drift signal)")
+    sub.add_parser("check", help="lint governed docs (CI gate)")
+    args = ap.parse_args()
+    root = find_root()
+    if args.cmd == "sweep":
+        n = cmd_sweep(root, args)
+        if args.exit_code and n:
+            sys.exit(1)
+    elif args.cmd == "check":
+        sys.exit(cmd_check(root, load_types(root)))
+
+
+if __name__ == "__main__":
+    main()

@@ -3,11 +3,8 @@ class: living
 type: entry
 tier: canonical
 title: MAIN — Docs-Governance master index
-status: active
-owner: "@landovsky"
-updated: 2026-08-20
 covers: [_types.yml]
-last_verified: 2026-08-20
+last_verified: 2026-08-22
 description: >
   The generated-style navigation index for the docs-governance master package —
   every governed doc grouped by role (Entry, Spec, Guides, Migrations, Records),
@@ -53,6 +50,7 @@ description: >
 | Doc | Type | Description |
 |---|---|---|
 | [`migrations/0.1.0-to-0.2.0.md`](migrations/0.1.0-to-0.2.0.md) | migration-guide | The v0.1 → v0.2 upgrade (add derived tier, owner/updated, ships:). |
+| [`migrations/0.2.0-to-0.2.1.md`](migrations/0.2.0-to-0.2.1.md) | migration-guide | The v0.2 → v0.2.1 cull (drop updated/audience/granularity; status transient-only; owner→manifest; last_verified attestation). |
 
 ### Records
 
@@ -67,8 +65,10 @@ The type enum for all of the above is [`_types.yml`](_types.yml).
 
 - **`payload/**`** and **`examples/**`** — distributable templates and example artifacts.
   They are validated when **instantiated** in a target repo, not as files sitting in the master.
-- **`spec/deck.html`** — an HTML teaching artifact with no YAML front matter; it is a
+- **`spec/learn.html`** — an interactive HTML teaching page with no YAML front matter; it is a
   **companion** of [`spec/model.md`](spec/model.md), tracked via that spec's `covers:` list.
+- **`spec/deck.html`** — the **archived** v0.2 slide deck, superseded by `learn.html`. Kept in place
+  (not deleted) as the historical artifact the immutable [`PROVENANCE.md`](PROVENANCE.md) record links to.
 - **`VERSION`** — data, not a document.
 
 ## Where the governance rules live

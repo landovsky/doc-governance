@@ -2,11 +2,8 @@
 class: living
 type: changelog
 title: "Documentation Governance — changelog"
-status: active
-owner: "@landovsky"
-updated: 2026-08-20
 covers: [VERSION]
-last_verified: 2026-08-20
+last_verified: 2026-08-22
 description: "Model version history"
 ---
 
@@ -15,6 +12,31 @@ description: "Model version history"
 Model-version history for the docs-governance system. Newest first.
 Format follows [keep-a-changelog](https://keepachangelog.com/). See
 [`PROVENANCE.md`](PROVENANCE.md) for the rationale behind these changes.
+
+## [0.2.1] — 2026-08-22
+
+Readability cull — trim the front-matter surface to fields something actually consumes,
+and formalise the trust field the `living` class depends on. Migration:
+[`migrations/0.2.0-to-0.2.1.md`](migrations/0.2.0-to-0.2.1.md).
+
+### Removed
+- **`updated`** — nothing consumed it; git shadows "content last changed" (`git log -1`).
+  Kept the anchors git can't derive (`date`, `event_date`, `last_verified`).
+- **`audience`** and **`granularity`** — descriptive attributes no rule consumed; `audience`
+  was `both` most of the time (no signal). Filter on `type` instead.
+
+### Changed
+- **`status` authored only on `transient`.** Derived for `living` (`active|stale|retired`) and
+  `immutable` (`accepted|superseded`), surfaced only when non-default — `grep status:` becomes
+  the stale/retired worklist.
+- **`owner` → manifest default + optional per-doc override.** Single-steward repos stop copying
+  the handle onto every file; the sweep falls back to `.docgov/manifest.yml:owner`.
+- **Required core is now `class`, `type`, `title`** + the class's date-of-record.
+
+### Clarified
+- **`last_verified` is a steward attestation** — an agent may propose a value or report a clean
+  check but never stamps today's date on its own judgment; backfill uses the last
+  genuine-confirmation date (**adopted ≠ verified**).
 
 ## [0.2.0] — 2026-08-20
 

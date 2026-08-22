@@ -3,9 +3,7 @@ class: immutable
 type: record          # a point-in-time provenance record — supersede, don't edit
 tier: canonical
 title: How we arrived at the v0.2 documentation-governance model
-status: accepted
 date: 2026-08-20
-owner: "@landovsky"
 description: >
   The design history of the portable documentation-governance model — the evidence,
   the synthesis, the objections that reshaped it, and the decisions taken — so a future

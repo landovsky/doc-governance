@@ -1,0 +1,544 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Documentation Governance — Learn (v0.2.1)</title>
+<style>
+  :root{
+    --bg:#0f1420; --panel:#161d2b; --panel2:#0b0f18; --ink:#e7ecf3; --muted:#8b98ad;
+    --line:#26303f; --accent:#5aa9ff; --key:#7fd1c8; --val:#e6c07b;
+    --imm:#c58af9; --liv:#63d19e; --tra:#f0a35e; --warn:#ff6b6b; --ok:#63d19e;
+    --can:#5aa9ff; --src:#e6c07b; --arc:#9aa7bb;
+  }
+  *{box-sizing:border-box}
+  html{scroll-behavior:smooth; scroll-padding-top:66px}
+  body{
+    margin:0; background:var(--bg); color:var(--ink);
+    font:16px/1.6 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;
+  }
+  code,.mono{font-family:"SF Mono",ui-monospace,Menlo,Consolas,monospace}
+  a{color:var(--accent); text-decoration:none} a:hover{text-decoration:underline}
+  .wrap{max-width:960px; margin:0 auto; padding:0 24px}
+
+  nav.top{position:sticky; top:0; z-index:20; background:rgba(15,20,32,.92);
+    backdrop-filter:blur(8px); border-bottom:1px solid var(--line)}
+  nav.top .wrap{display:flex; gap:6px 18px; align-items:center; flex-wrap:wrap; height:auto; padding:11px 24px}
+  nav.top b{color:var(--ink); margin-right:6px}
+  nav.top a{color:var(--muted); font-size:13.5px}
+  nav.top .ver{margin-left:auto; color:var(--muted); font-size:12.5px;
+    border:1px solid var(--line); border-radius:999px; padding:2px 10px}
+
+  header.hero{padding:60px 0 30px; border-bottom:1px solid var(--line)}
+  header.hero h1{font-size:40px; line-height:1.15; margin:0 0 14px; letter-spacing:-.5px}
+  header.hero p.lede{font-size:19px; color:var(--muted); margin:0 0 24px; max-width:720px}
+  .qrow{display:grid; grid-template-columns:repeat(4,1fr); gap:12px}
+  .qrow .q{background:var(--panel); border:1px solid var(--line); border-radius:12px; padding:13px 15px}
+  .qrow .q h4{margin:0 0 4px; font-size:13px; color:var(--accent); text-transform:uppercase; letter-spacing:.04em}
+  .qrow .q p{margin:0; font-size:13.5px; color:var(--muted)}
+
+  /* the problem hook */
+  .problem{background:rgba(255,107,107,.06); border:1px solid rgba(255,107,107,.3);
+    border-radius:14px; padding:20px 22px; margin-top:24px}
+  .problem h3{margin:0 0 8px; font-size:15px; color:#ffb4b4; text-transform:uppercase; letter-spacing:.05em}
+  .problem p{margin:0 0 10px; font-size:15px; color:#d7dee9} .problem p:last-child{margin:0}
+  .problem .num{color:var(--warn); font-weight:700}
+  .problem .fix{color:var(--ok); font-weight:600}
+
+  section{padding:44px 0; border-bottom:1px solid var(--line)}
+  section h2{font-size:27px; margin:0 0 6px; letter-spacing:-.3px}
+  section .sub{color:var(--muted); margin:0 0 26px; font-size:16px; max-width:740px}
+  h3.kick{font-size:13px; text-transform:uppercase; letter-spacing:.06em; color:var(--muted); margin:0 0 12px}
+
+  .chip{display:inline-block; font-weight:600; font-size:12px; letter-spacing:.03em;
+    text-transform:uppercase; padding:3px 9px; border-radius:999px}
+  .imm{color:var(--imm)} .liv{color:var(--liv)} .tra{color:var(--tra)}
+  .can{color:var(--can)} .src{color:var(--src)} .arc{color:var(--arc)}
+
+  .cards3{display:grid; grid-template-columns:1fr 1fr 1fr; gap:16px}
+  .card{background:var(--panel); border:1px solid var(--line); border-radius:14px; padding:18px 20px}
+  .card h3{margin:0 0 6px; font-size:18px}
+  .card p{margin:0; font-size:14px; color:var(--muted)}
+  .card .meta{margin-top:10px; font-size:12.5px; color:var(--muted)}
+
+  table{border-collapse:collapse; width:100%; font-size:14.5px; margin:6px 0}
+  th,td{border:1px solid var(--line); padding:9px 12px; text-align:left; vertical-align:top}
+  th{color:var(--muted); font-weight:600; font-size:12.5px; text-transform:uppercase; letter-spacing:.03em}
+
+  pre{background:var(--panel2); border:1px solid var(--line); border-radius:12px;
+    padding:16px 18px; margin:0; overflow:auto; font-size:14px; line-height:1.7}
+  .fm{color:var(--muted)} .k{color:var(--key)} .v{color:var(--val)} .cmt{color:#5f6b7e; font-style:italic}
+
+  .callout{background:rgba(90,169,255,.07); border:1px solid rgba(90,169,255,.35);
+    border-radius:12px; padding:16px 18px; margin:14px 0}
+  .callout.warn{background:rgba(255,107,107,.08); border-color:rgba(255,107,107,.4)}
+  .callout h3{margin:0 0 6px; font-size:16px}
+  .callout p{margin:0 0 6px; font-size:14.5px; color:#c7d0dd} .callout p:last-child{margin:0}
+
+  /* PLAYGROUND */
+  .pg{display:grid; grid-template-columns:1fr 1fr; gap:20px; align-items:start}
+  .pgpanel{background:var(--panel); border:1px solid var(--line); border-radius:14px; padding:20px}
+  .pgpanel h3.kick{margin-bottom:14px}
+  .presets{display:flex; gap:8px; flex-wrap:wrap; margin-bottom:18px}
+  .presets button{background:var(--panel2); color:var(--muted); border:1px dashed var(--line);
+    border-radius:8px; padding:7px 11px; font-size:12.5px; cursor:pointer}
+  .presets button:hover{border-color:var(--accent); color:var(--ink)}
+  .seg{display:flex; gap:8px; margin-bottom:6px; flex-wrap:wrap}
+  .seg button{flex:1; min-width:96px; background:var(--panel2); color:var(--ink); cursor:pointer;
+    border:1px solid var(--line); border-radius:9px; padding:9px 8px; font-size:14px; font-weight:600}
+  .seg button:hover{border-color:var(--accent)}
+  .seg button.on.imm{border-color:var(--imm); background:rgba(197,138,249,.14); color:var(--imm)}
+  .seg button.on.liv{border-color:var(--liv); background:rgba(99,209,158,.14); color:var(--liv)}
+  .seg button.on.tra{border-color:var(--tra); background:rgba(240,163,94,.14); color:var(--tra)}
+  label.fld{display:block; font-size:12.5px; color:var(--muted); text-transform:uppercase;
+    letter-spacing:.04em; margin:14px 0 6px}
+  select{width:100%; background:var(--panel2); color:var(--ink); border:1px solid var(--line);
+    border-radius:9px; padding:9px 10px; font-size:14px; font-family:inherit}
+  .toggles label{display:flex; align-items:flex-start; gap:9px; font-size:14px; color:#c7d0dd;
+    padding:8px 0; cursor:pointer; border-top:1px solid var(--line)}
+  .toggles label:first-child{border-top:none}
+  .toggles input{width:16px; height:16px; margin-top:2px; accent-color:var(--accent); flex:none}
+  .tog-note{display:block; font-size:12px; color:var(--muted); margin-top:2px; font-weight:400; line-height:1.4}
+  .muted-note{font-size:12.5px; color:var(--muted); margin-top:6px}
+
+  .verdict{font-size:22px; font-weight:700; padding:12px 16px; border-radius:11px; margin-bottom:14px;
+    display:flex; align-items:center; gap:10px}
+  .verdict.yes{background:rgba(99,209,158,.13); border:1px solid rgba(99,209,158,.5); color:var(--ok)}
+  .verdict.no{background:rgba(255,107,107,.11); border:1px solid rgba(255,107,107,.5); color:var(--warn)}
+  .derived{display:flex; gap:10px; flex-wrap:wrap; margin-bottom:14px}
+  .derived .d{flex:1; min-width:120px; background:var(--panel2); border:1px solid var(--line);
+    border-radius:10px; padding:10px 12px}
+  .derived .d .lbl{font-size:11.5px; text-transform:uppercase; letter-spacing:.04em; color:var(--muted)}
+  .derived .d .val{font-size:16px; font-weight:600; margin-top:2px}
+  .derived .d .why{font-size:12px; color:var(--muted); margin-top:4px; line-height:1.4}
+  .pred{background:var(--panel2); border:1px solid var(--line); border-radius:10px; padding:12px 14px;
+    font-size:13px; line-height:1.9}
+  .pred .row{display:flex; gap:8px; align-items:baseline}
+  .pred .mark{width:16px; flex:none; font-weight:700}
+  .pred .pass{color:var(--ok)} .pred .fail{color:var(--warn)}
+  .pred .cl{color:#c7d0dd}
+
+  .challenge{margin-top:22px}
+  .challenge button{margin-top:8px; background:var(--panel2); color:var(--accent); border:1px solid var(--accent);
+    border-radius:8px; padding:8px 14px; font-size:13.5px; cursor:pointer; font-weight:600}
+  .challenge button:hover{background:rgba(90,169,255,.12)}
+
+  .foot{padding:34px 0 60px; color:var(--muted); font-size:14px}
+  .foot code{color:var(--val)}
+  @media(max-width:820px){ .pg,.cards3,.qrow{grid-template-columns:1fr} }
+</style>
+</head>
+<body>
+
+<nav class="top"><div class="wrap">
+  <b>Doc-Governance</b>
+  <a href="#why">Why</a>
+  <a href="#axes">Axes</a>
+  <a href="#play">Playground</a>
+  <a href="#frontmatter">Front matter</a>
+  <a href="#trust">Trust rule</a>
+  <a href="#lifecycle">Lifecycle</a>
+  <a href="#enforce">Enforcement</a>
+  <span class="ver">model v0.2.1</span>
+</div></nav>
+
+<header class="hero"><div class="wrap">
+  <h1>One model for every repo's docs</h1>
+  <p class="lede">Every document declares — in YAML front matter — a maintenance <b class="liv">class</b>, a derived
+    citeability <b class="can">tier</b>, and a repo-local <b class="val">type</b>. Trust is <i>computed</i>, never
+    inferred by reading the body or asking who wrote it.</p>
+  <div class="qrow">
+    <div class="q"><h4>What is this?</h4><p>the <span class="val">type</span> (repo-local label)</p></div>
+    <div class="q"><h4>Keep it fresh?</h4><p>the <span class="liv">class</span> (maintenance rule)</p></div>
+    <div class="q"><h4>Trust it now?</h4><p>the <span class="can">tier</span> (derived)</p></div>
+    <div class="q"><h4>Where does it go?</h4><p>one <b>generated</b> index</p></div>
+  </div>
+  <div class="problem" id="why">
+    <h3>Why this exists — two failures we watched happen</h3>
+    <p><b>Competing sources of truth.</b> One repo had <i>three</i> hand-kept registries of "what briefs exist,"
+      silently disagreeing: <span class="num">23</span> vs <span class="num">21</span> vs <span class="num">21</span> —
+      and a note claiming one was auto-generated when it wasn't.</p>
+    <p><b>Decisions that never propagate.</b> An ADR was ratified — <i>"generate the index from front matter"</i> —
+      and simply never built; docs and code drifted apart with nothing flagging it. A brief handed to an outside dev
+      described <span class="num">five</span> routes when the code had <span class="num">two</span>, written present-tense as fact.</p>
+    <p class="fix">The taxonomy was never the problem — the lack of enforcement was. So trust here is a front-matter
+      computation a CI gate can check, not folklore.</p>
+  </div>
+</div></header>
+
+<!-- AXES -->
+<section id="axes"><div class="wrap">
+  <h2>Three orthogonal axes</h2>
+  <p class="sub"><span class="mono">class ⊥ tier ⊥ type.</span> The class is the <b>primary</b> axis — the thing an
+    agent acts on. Tier answers "may I cite it?" and is <b>derived, never hand-set</b>. Type is a semantic label, not a behaviour.</p>
+  <div class="cards3">
+    <div class="card" style="border-color:rgba(197,138,249,.4)">
+      <h3 class="imm">immutable</h3>
+      <p>True at a point in time. Never edited — you <i>supersede</i> with a new doc.</p>
+      <p class="meta">date-of-record: <span class="k">date</span> · raw evidence uses <span class="k">event_date</span></p>
+    </div>
+    <div class="card" style="border-color:rgba(99,209,158,.4)">
+      <h3 class="liv">living</h3>
+      <p>Tracks the code. You own its freshness against <span class="k">covers[]</span>.</p>
+      <p class="meta">requires <span class="k">covers</span> + <span class="k">last_verified</span></p>
+    </div>
+    <div class="card" style="border-color:rgba(240,163,94,.4)">
+      <h3 class="tra">transient</h3>
+      <p>Has a <span class="k">status</span>. Resolves, then steps aside to <span class="arc">archive</span>.</p>
+      <p class="meta">a <span class="v">spec</span> also links <span class="k">ships</span></p>
+    </div>
+  </div>
+
+  <h3 class="kick" style="margin-top:28px">The class × tier grid — what the split buys</h3>
+  <table>
+    <tr><th></th><th><span class="can">canonical</span> — cite</th><th><span class="src">source</span> — never cite</th><th><span class="arc">archive</span> — history</th></tr>
+    <tr><td><span class="imm">immutable</span></td><td><b>ADR</b></td><td><b>transcript · audit</b></td><td>superseded ADR</td></tr>
+    <tr><td><span class="liv">living</span></td><td>reference · domain-doc · runbook · index</td><td class="muted-note">—</td><td>archived reference</td></tr>
+    <tr><td><span class="tra">transient</span></td><td>active brief / spec <span style="color:var(--muted)">(as plan)</span></td><td class="muted-note">—</td><td>shipped / dropped spec</td></tr>
+  </table>
+  <p class="muted-note"><b>immutable</b> no longer means one thing: an ADR (<span class="can">canonical</span> — cite) and a
+    transcript (<span class="src">source</span> — never cite) share the edit rule but differ by tier. Two invariants:
+    <b>source ⟹ immutable</b>, and a superseded/terminal doc always derives to <span class="arc">archive</span>. Curious
+    how a doc lands in each cell? <a href="#play">Drive it below.</a></p>
+</div></section>
+
+<!-- PLAYGROUND -->
+<section id="play"><div class="wrap">
+  <h2>Derive a doc — live</h2>
+  <p class="sub">The whole model is computable. Load a scenario or set the state by hand; watch <b class="can">tier</b>,
+    <b>status(doc)</b>, and the <b>CITABLE</b> predicate derive — the exact logic <code>docgov</code> and CI run.</p>
+  <div class="pg">
+    <div class="pgpanel">
+      <h3 class="kick">Load a scenario</h3>
+      <div class="presets" id="presets"></div>
+      <h3 class="kick">1 · class</h3>
+      <div class="seg" id="segClass">
+        <button data-cls="immutable" class="imm">immutable</button>
+        <button data-cls="living" class="liv">living</button>
+        <button data-cls="transient" class="tra">transient</button>
+      </div>
+      <label class="fld">2 · type</label>
+      <select id="selType"></select>
+      <div id="stateBox"><label class="fld">3 · state</label>
+        <div class="toggles" id="toggles"></div>
+      </div>
+    </div>
+    <div class="pgpanel">
+      <h3 class="kick">Derived</h3>
+      <div id="verdict" class="verdict yes"></div>
+      <div class="derived">
+        <div class="d"><div class="lbl">tier</div><div class="val" id="tierV">—</div><div class="why" id="tierW"></div></div>
+        <div class="d"><div class="lbl">status(doc)</div><div class="val" id="statV">—</div><div class="why" id="statW"></div></div>
+      </div>
+      <div class="pred" id="pred"></div>
+      <label class="fld" style="margin-top:16px">resulting front matter</label>
+      <pre id="fm" style="font-size:13px"></pre>
+    </div>
+  </div>
+
+  <div class="callout challenge">
+    <h3>Your turn</h3>
+    <p>Make a <span class="tra">transient</span> <span class="mono">spec</span> that is CITABLE as a plan (verdict goes
+      green), then flip its status to <span class="mono">shipped</span>. Watch <span class="can">tier</span> fall to
+      <span class="arc">archive</span> and CITABLE go red — the plan was citable as <i>intent</i>, but the shipped record
+      is not; you'd cite the <span class="liv">reference</span> it <span class="k">promoted_to</span> instead. That single
+      move is the whole "resolved ≠ current truth" idea.</p>
+    <button id="startChallenge">Start me at: spec · active →</button>
+  </div>
+</div></section>
+
+<!-- FRONT MATTER -->
+<section id="frontmatter"><div class="wrap">
+  <h2>The lean front-matter surface (v0.2.1)</h2>
+  <p class="sub">v0.2.1 cut the surface to fields something <i>consumes</i>. Required core is three keys; the rest is
+    conditional on class, derived, or gone.</p>
+  <div class="pg">
+    <pre style="font-size:13.5px"><span class="cmt"># REQUIRED CORE — every doc</span>
+<span class="k">class</span>   <span class="imm">immutable</span> | <span class="liv">living</span> | <span class="tra">transient</span>
+<span class="k">type</span>    <span class="fm">repo-local label (_types.yml)</span>
+<span class="k">title</span>   <span class="fm">human title</span>
+
+<span class="cmt"># + ONE date-of-record, by class</span>
+<span class="imm">immutable</span> → <span class="k">date</span>      <span class="cmt"># raw/source → event_date</span>
+<span class="liv">living</span>    → <span class="k">covers</span> + <span class="k">last_verified</span>
+<span class="tra">transient</span> → <span class="k">status</span>    <span class="cmt"># a spec also: ships</span>
+
+<span class="cmt"># DERIVED — never hand-set</span>
+<span class="k">tier</span>     <span class="fm">canonical | source | archive</span>
+<span class="k">status</span>   <span class="fm">on living / immutable (see playground)</span>
+
+<span class="cmt"># GONE in v0.2.1</span>
+<span class="fm">updated   → read git (git log -1)</span>
+<span class="fm">audience, granularity → dropped</span>
+<span class="fm">owner     → default in .docgov/manifest.yml</span></pre>
+    <div>
+      <h3 class="kick">Why these cuts</h3>
+      <table>
+        <tr><th>field</th><th>became</th></tr>
+        <tr><td class="mono">updated</td><td>nothing consumed it; git shadows it</td></tr>
+        <tr><td class="mono">audience</td><td>was <span class="mono">both</span> most of the time — no signal</td></tr>
+        <tr><td class="mono">granularity</td><td>free-text, unconsumed</td></tr>
+        <tr><td class="mono">owner</td><td>one manifest default + per-doc override</td></tr>
+        <tr><td class="mono">status</td><td>authored only on <span class="tra">transient</span>; derived elsewhere</td></tr>
+      </table>
+      <p class="muted-note">A living <span class="mono">reference</span> now reads: <span class="k">class type title covers
+        last_verified</span> (+ derived <span class="k">tier</span>). Every remaining line is consumed by something —
+        that's the bar. Once <span class="k">status</span> is surfaced only when abnormal,
+        <span class="mono">grep -rn '^status:'</span> is your stale / archived / superseded worklist.</p>
+    </div>
+  </div>
+</div></section>
+
+<!-- TRUST RULE -->
+<section id="trust"><div class="wrap">
+  <h2>The one rule an agent must not break</h2>
+  <p class="sub">Everything above hangs on <span class="k">last_verified</span> for the <span class="liv">living</span> class —
+    it is what <span class="mono">CITABLE</span> trusts. So the model is strict about who may move it.</p>
+  <div class="callout">
+    <h3><span class="k">last_verified</span> is a steward <i>attestation</i>, not a machine check.</h3>
+    <p>A human sets it when they have re-confirmed the doc against its <span class="k">covers[]</span>. An agent may run the
+      check and <b>propose</b> a value — it <b>never stamps today's date on its own judgment</b>. A clean automated scan means
+      "no conflict found," <i>not</i> "a steward vouches for this." (Symmetric to <span class="mono">stale</span>, set only by the sweep.)</p>
+  </div>
+  <div class="callout warn">
+    <h3>adopted ≠ verified</h3>
+    <p>When you backfill front matter onto a pre-existing doc, set <span class="k">last_verified</span> to the date the content
+      was last <i>genuinely confirmed</i> (git author-date of its last substantive edit), <b>not</b> today. If code moved since,
+      the doc is <i>correctly</i> drift-stale and waits in the review queue — that is the system working. Stamping today would bless
+      N unread docs as <span class="can">canonical</span> in one PR: the exact competing-truth failure the model exists to prevent.</p>
+  </div>
+</div></section>
+
+<!-- LIFECYCLE -->
+<section id="lifecycle"><div class="wrap">
+  <h2>How a doc moves through its life</h2>
+  <p class="sub">Raw evidence becomes a plan, ships, and turns into durable truth. The ★ edges are the ones real repos kept failing.</p>
+  <pre style="line-height:2"><span class="imm">transcript</span> ──▶ <span class="tra">brief</span> ──▶ <span class="tra">spec</span> ──▶ [ ships #PR ] ──▶ <span class="liv">reference / domain-doc</span>
+<span class="fm">(imm·<span class="src">source</span>)</span>  <span class="fm">(transient·plan)</span>   <span class="fm">★ auto-archive</span>    <span class="fm">★ (living·<span class="can">canonical</span>)</span>
+                     └── decision ──▶ <span class="imm">ADR</span> ──▶ <span class="fm">★ propagates into the living doc</span>
+                                     <span class="fm">(imm·<span class="can">canonical</span>)</span></pre>
+  <p class="muted-note"><b>Supersede, never delete.</b> On ship a transient sets <span class="k">promoted_to</span> and derives to
+    <span class="arc">archive</span> — kept as history, dropped from the "current" view. The transcript stays
+    <span class="src">source</span> forever. <a href="#play">See it in the playground:</a> the "Shipped spec" scenario.</p>
+</div></section>
+
+<!-- ENFORCEMENT -->
+<section id="enforce"><div class="wrap">
+  <h2>Enforcement — computed, not trusted</h2>
+  <p class="sub">Because trust is a front-matter computation, a tool can check it. The <code>docgov</code> CLI runs the same
+    <span class="mono">CITABLE</span> you drove above.</p>
+  <div class="pg">
+    <div>
+      <h3 class="kick">docgov sweep</h3>
+      <pre style="font-size:13px"><span class="cmt"># find living docs whose covers[] drifted</span>
+<span class="v">$</span> docgov sweep
+DRIFT  …/spec/model.md:7  (last_verified=2026-08-20)
+         └─ spec/learn.html: changed in working tree
+
+<span class="cmt"># --write stamps status: stale (machine-set marker)</span>
+<span class="v">$</span> docgov sweep --write
+<span class="v">$</span> grep -rn '^status: stale'   <span class="cmt"># your worklist</span></pre>
+    </div>
+    <div>
+      <h3 class="kick">docgov check  (the CI gate)</h3>
+      <pre style="font-size:13px"><span class="cmt"># lint every governed doc; non-zero exit fails CI</span>
+<span class="v">$</span> docgov check
+✗ …/foo.md
+    - forbidden key (v0.2.1): updated  → …/foo.md:5
+    - tier=source disagrees with derived canonical
+    - covers[] path does not exist: app/gone.rb</pre>
+    </div>
+  </div>
+  <p class="muted-note">Plus a shrink-only <span class="mono">.doc-todo</span> grandfather list (pre-existing messes are frozen,
+    never grown), one <b>generated</b> index (hand-kept registries banned — remember the 23-vs-21-vs-21), and a retire-on-ship
+    gate. The taxonomy is not the point — <b>enforcement</b> is.</p>
+</div></section>
+
+<div class="foot"><div class="wrap">
+  Documentation Governance — model <b>v0.2.1</b>. Normative spec: <code>spec/model.md</code> +
+  <code>spec/front-matter.md</code>. Migration: <code>migrations/0.2.0-to-0.2.1.md</code>. Tooling: <code>bin/docgov</code>.
+  The interactive self-study companion to the normative spec.
+</div></div>
+
+<script>
+// ── the model, in the browser (mirrors spec/model.md §4–6 and bin/docgov) ──
+const TYPES = {
+  immutable: [
+    {t:"adr", raw:false}, {t:"record", raw:false},
+    {t:"transcript", raw:true}, {t:"seo-audit", raw:true},
+  ],
+  living: [
+    {t:"reference", raw:false}, {t:"domain-doc", raw:false},
+    {t:"gitops-runbook", raw:false}, {t:"entry", raw:false},
+  ],
+  transient: [ {t:"brief", raw:false}, {t:"spec", raw:false} ],
+};
+// state toggles per class — each carries a plain-language definition
+const TOGGLES = {
+  immutable: [
+    {id:"superseded", label:"superseded by a newer doc",
+     note:"a newer doc set this one's superseded_by → it becomes terminal history"},
+  ],
+  living: [
+    {id:"drift", label:"covered code changed since last_verified",
+     note:"a covers[] path has a commit newer than last_verified → the sweep marks it stale"},
+    {id:"missing", label:"a covers[] path was deleted",
+     note:"a file this doc claims to describe no longer exists → the freshness promise is broken"},
+    {id:"expired", label:"past its TTL",
+     note:"more calendar time passed than the type's TTL (e.g. reference = 180d) since last_verified"},
+    {id:"archived", label:"all covers[] gone → steward archived it",
+     note:"every path it covered is gone → no subject left; the steward sets status: archived (terminal)"},
+  ],
+  transient: [],
+};
+const TRANSIENT_STATUS = ["draft","active","shipped","killed"];
+const PRESETS = [
+  {name:"✅ Fresh reference", cls:"living", type:"reference", flags:{}},
+  {name:"⚠ Stale living doc", cls:"living", type:"reference", flags:{drift:true}},
+  {name:"📜 Superseded ADR", cls:"immutable", type:"adr", flags:{superseded:true}},
+  {name:"🎙 Raw transcript", cls:"immutable", type:"transcript", flags:{}},
+  {name:"🚢 Shipped spec", cls:"transient", type:"spec", tstatus:"shipped"},
+];
+
+const S = {cls:"living", type:"reference", raw:false, flags:{}, tstatus:"active"};
+
+// ── derivations ──
+function tier(){
+  if (S.cls==="immutable" && S.flags.superseded) return ["archive","superseded → terminal"];
+  if (S.cls==="living" && S.flags.archived) return ["archive","covers[] gone → archived (terminal)"];
+  if (S.cls==="transient" && (S.tstatus==="shipped"||S.tstatus==="killed")) return ["archive","terminal status"];
+  if (S.raw) return ["source","type is raw → inform only"];
+  return ["canonical","not raw, not terminal"];
+}
+function status(){
+  if (S.cls==="transient") return [S.tstatus,"authored (the state machine)"];
+  if (S.cls==="living"){
+    if (S.flags.archived) return ["archived","covers[] all gone (terminal)"];
+    if (S.flags.drift||S.flags.missing||S.flags.expired) return ["stale","sweep sets stale on drift"];
+    return ["active","derived default (omitted in front matter)"];
+  }
+  if (S.raw) return ["—","raw/source: no meaningful status"];
+  if (S.flags.superseded) return ["superseded","superseded_by is set"];
+  return ["accepted","derived default (ADR/record)"];
+}
+function citable(){
+  const [tv] = tier(), [sv] = status();
+  const rows = [];
+  const c1 = tv==="canonical";
+  rows.push([c1, `tier == canonical`, `(is ${tv})`]);
+  const c2 = ["active","accepted","generated"].includes(sv);
+  rows.push([c2, `status(doc) ∈ {active, accepted, generated}`, `(is ${sv})`]);
+  let c3, l3;
+  if (S.cls==="immutable"){ c3=true; l3="class immutable → cite as of its date"; }
+  else if (S.cls==="living"){
+    c3 = !S.flags.expired && !S.flags.missing && !S.flags.drift && !S.flags.archived;
+    l3 = `living fresh: within TTL, covers exist, no covers commit newer than last_verified`;
+  } else {
+    c3 = (S.tstatus==="active"||S.tstatus==="draft");
+    l3 = "transient citeable as intent, not current state";
+  }
+  rows.push([c3, l3, ""]);
+  return [c1 && c2 && c3, rows];
+}
+
+// ── render ──
+function esc(s){return s.replace(/&/g,"&amp;").replace(/</g,"&lt;");}
+function render(){
+  document.querySelectorAll("#segClass button").forEach(b=>{
+    b.classList.toggle("on", b.dataset.cls===S.cls);
+  });
+  const sel = document.getElementById("selType");
+  if (sel.dataset.for!==S.cls){
+    sel.dataset.for=S.cls; sel.innerHTML="";
+    TYPES[S.cls].forEach(o=>{
+      const op=document.createElement("option"); op.value=o.t;
+      op.textContent=`${o.t}${o.raw?"  (raw)":""}`; sel.appendChild(op);
+    });
+    if (!TYPES[S.cls].some(o=>o.t===S.type)) S.type=TYPES[S.cls][0].t;  // keep preset type if valid
+    sel.value=S.type;
+  }
+  S.raw = TYPES[S.cls].find(o=>o.t===S.type).raw;
+
+  const box=document.getElementById("toggles");
+  box.innerHTML="";
+  if (S.cls==="transient"){
+    const s=document.createElement("select");
+    TRANSIENT_STATUS.forEach(v=>{const o=document.createElement("option");o.value=v;o.textContent=v;s.appendChild(o);});
+    s.value=S.tstatus; s.onchange=()=>{S.tstatus=s.value; render();};
+    box.appendChild(s);
+    const n=document.createElement("div"); n.className="muted-note";
+    n.textContent="status is the lifecycle state machine — authored on transient: draft → active → shipped / killed.";
+    box.appendChild(n);
+  } else {
+    TOGGLES[S.cls].forEach(t=>{
+      const l=document.createElement("label");
+      const cb=document.createElement("input"); cb.type="checkbox"; cb.checked=!!S.flags[t.id];
+      cb.onchange=()=>{S.flags[t.id]=cb.checked; render();};
+      const span=document.createElement("span");
+      span.innerHTML = esc(t.label) + `<span class="tog-note">${esc(t.note)}</span>`;
+      l.appendChild(cb); l.appendChild(span); box.appendChild(l);
+    });
+  }
+
+  const [tv,tw]=tier(), [sv,sw]=status();
+  const tierEl=document.getElementById("tierV");
+  tierEl.textContent=tv; tierEl.className="val "+({canonical:"can",source:"src",archive:"arc"}[tv]||"");
+  document.getElementById("tierW").textContent=tw;
+  document.getElementById("statV").textContent=sv;
+  document.getElementById("statW").textContent=sw;
+
+  const [ok,rows]=citable();
+  const vEl=document.getElementById("verdict");
+  vEl.className="verdict "+(ok?"yes":"no");
+  vEl.textContent=(ok?"✓ CITABLE":"✗ NOT citable")+"  —  an agent may "+(ok?"cite this as current truth":"not cite this");
+  document.getElementById("pred").innerHTML=
+    `<div style="color:var(--muted);margin-bottom:6px">CITABLE(doc) :=</div>`+
+    rows.map(([p,l,x])=>`<div class="row"><span class="mark ${p?'pass':'fail'}">${p?'✓':'✗'}</span>`+
+      `<span class="cl">${esc(l)} <span style="color:var(--muted)">${esc(x||"")}</span></span></div>`).join("");
+
+  // front matter — assemble proper lines per class
+  const L = ['<span class="fm">---</span>',
+             `<span class="k">class</span>: ${S.cls}`,
+             `<span class="k">type</span>: <span class="v">${S.type}</span>`];
+  const showStatus = (S.cls==="living" && sv!=="active") || (S.cls==="immutable" && !S.raw && sv==="superseded");
+  if (S.cls==="transient"){
+    L.push(`<span class="k">status</span>: <span class="v">${S.tstatus}</span>`);
+    L.push(S.type==="spec" ? `<span class="k">ships</span>: <span class="v">"#821"</span>`
+                           : `<span class="k">phase</span>: <span class="v">brief</span>`);
+  } else if (showStatus){
+    L.push(`<span class="k">status</span>: <span class="v">${sv}</span>   <span class="cmt"># non-default → surfaced</span>`);
+  }
+  if (S.cls==="immutable"){
+    L.push(S.raw ? `<span class="k">event_date</span>: <span class="v">2026-08-19</span>`
+                 : `<span class="k">date</span>: <span class="v">2026-08-20</span>`);
+    if (!S.raw && S.flags.superseded) L.push(`<span class="k">superseded_by</span>: <span class="v">0014</span>`);
+  } else if (S.cls==="living"){
+    L.push(`<span class="k">covers</span>:`, `  - <span class="v">app/domains/…</span>`);
+    L.push(`<span class="k">last_verified</span>: <span class="v">2026-08-20</span>   <span class="cmt"># steward attestation</span>`);
+  }
+  L.push(`<span class="k">tier</span>: <span class="v">${tv}</span>   <span class="cmt"># derived — not hand-set</span>`,
+         '<span class="fm">---</span>');
+  document.getElementById("fm").innerHTML = L.join("\n");
+}
+
+// ── controls ──
+function setPreset(p){
+  S.cls=p.cls; S.type=p.type; S.flags=Object.assign({}, p.flags||{}); S.tstatus=p.tstatus||"active";
+  document.getElementById("selType").dataset.for="";  // force type list rebuild + revalidate
+  render();
+}
+const pr=document.getElementById("presets");
+PRESETS.forEach(p=>{
+  const b=document.createElement("button"); b.textContent=p.name; b.onclick=()=>setPreset(p); pr.appendChild(b);
+});
+document.querySelectorAll("#segClass button").forEach(b=>{
+  b.onclick=()=>{S.cls=b.dataset.cls; S.flags={}; S.tstatus="active";
+    document.getElementById("selType").dataset.for=""; render();};
+});
+document.getElementById("selType").onchange=e=>{ S.type=e.target.value; render(); };
+document.getElementById("startChallenge").onclick=()=>
+  setPreset({cls:"transient", type:"spec", tstatus:"active"});
+render();
+</script>
+</body>
+</html>

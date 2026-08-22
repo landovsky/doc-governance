@@ -5,7 +5,7 @@
 # (Shape mirrors payload/.docgov/manifest.yml; values here are real, not placeholders.)
 
 # Version of the shared model THIS repo conforms to — and, being the master, defines.
-model_version: 0.2.0
+model_version: 0.2.1
 
 # ISO date the master adopted (dogfooded) its own model.
 adopted_at: 2026-08-20
@@ -22,6 +22,6 @@ paths:
 
 # Behavioural switches — all MANUAL: the docgov CLI, the index generator, and CI are deferred.
 options:
-  tooling: manual  # no docgov CLI yet — run any checks by hand
-  index: manual    # MAIN.md is hand-written until the front-matter generator lands
-  ci: none         # no CI gate wired on the master itself yet
+  tooling: vendored  # bin/docgov provides `check` + `sweep`; pinned pip install still deferred
+  index: manual      # MAIN.md is hand-written until the front-matter generator lands
+  ci: active         # .github/workflows/docs-governance.yml runs `docgov check` on every PR
