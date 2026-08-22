@@ -1,0 +1,70 @@
+# docs/_types.yml — this repo's document type enum (repo layer, OPEN).
+#
+# Shape of each entry:
+#
+#   <type>:
+#     class:    immutable | living | transient    # its default maintenance class
+#     raw:      true                               # OPTIONAL — forces tier: source (frozen evidence)
+#     archival: move | flag                        # OPTIONAL — how it is retired (move file | flag front matter)
+#     requires: [field, ...]                       # front-matter keys this type must carry
+#
+# Rules of thumb:
+#   - `class` is closed & portable; `type` is local. Adding a type is ONE line — no model change.
+#   - `raw: true` ⟹ tier derives to `source` (never citeable) ⟹ the doc is immutable.
+#   - Attributes (audience, phase, domain, granularity, language) are NEVER types.
+#   - Does NOT belong here: customer/bot copy → app/i18n or CMS; living item-lists → Issues/bd.
+
+# ── Universal core types (every repo) ─────────────────────────────────────────
+
+adr:
+  class: immutable
+  archival: flag                 # superseded ADRs stay in place, flagged via superseded_by
+  requires: [id, date, superseded_by]
+
+record:
+  class: immutable
+  requires: [date]               # a frozen record of something that happened
+
+transcript:
+  class: immutable
+  raw: true                      # tier: source — inform only, weight by event_date
+  archival: move
+  requires: [event_date]
+
+reference:
+  class: living
+  requires: [covers, last_verified]
+
+domain-doc:
+  class: living
+  requires: [covers, last_verified, domain]
+
+runbook:                         # a.k.a. gitops
+  class: living
+  requires: [covers, last_verified]
+
+entry:
+  class: living
+  requires: [covers, last_verified]   # README / MAIN / CLAUDE / governance
+
+brief:
+  class: transient
+  archival: flag                 # phase pitch|brief; advances to spec
+  requires: [status, phase]
+
+spec:
+  class: transient
+  archival: flag
+  requires: [status, ships]      # `ships:` links the PR/issue that retires it
+
+# ── Repo-specific examples (uncomment / adapt) ────────────────────────────────
+#
+# seo-audit:
+#   class: immutable
+#   raw: true                    # tier: source
+#   archival: move
+#   requires: [event_date, target_url]
+#
+# incident:
+#   class: immutable
+#   requires: [date, severity]

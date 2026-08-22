@@ -1,0 +1,27 @@
+# .docgov/manifest.yml — the MASTER package's OWN docs-governance config.
+#
+# The docs-governance package governs itself. This manifest wires the model into
+# this very repo — locating the index, the type enum, and the grandfather list.
+# (Shape mirrors payload/.docgov/manifest.yml; values here are real, not placeholders.)
+
+# Version of the shared model THIS repo conforms to — and, being the master, defines.
+model_version: 0.2.0
+
+# ISO date the master adopted (dogfooded) its own model.
+adopted_at: 2026-08-20
+
+# Steward the governance loop notifies.
+owner: "@landovsky"
+
+# Where the governed artifacts live in the master.
+paths:
+  index_file: MAIN.md          # the generated-style navigation index (hand-written for now)
+  types_file: _types.yml       # the master's own repo-local `type` vocabulary
+  todo_file: .docgov/.doc-todo  # grandfather list of exempt pre-existing files
+  governance: "spec/model.md + spec/front-matter.md (this IS the governance package)"  # no separate governance.md
+
+# Behavioural switches — all MANUAL: the docgov CLI, the index generator, and CI are deferred.
+options:
+  tooling: manual  # no docgov CLI yet — run any checks by hand
+  index: manual    # MAIN.md is hand-written until the front-matter generator lands
+  ci: none         # no CI gate wired on the master itself yet

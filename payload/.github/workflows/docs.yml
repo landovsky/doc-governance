@@ -1,0 +1,33 @@
+# docs-governance CI — PLACEHOLDER STUB.
+#
+# The docgov CLI and its pinned install are DEFERRED. Until they land, doc
+# governance is enforced MANUALLY. This workflow only prints a reminder; it
+# never fails a PR. The commented lines below show exactly where the real
+# checks will slot in once `docgov` ships.
+name: docs-governance
+
+on:
+  pull_request:
+    paths:
+      - "docs/**"
+      - "MAIN.md"
+      - ".docgov/**"
+
+jobs:
+  docs:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Notice (manual until docgov CLI lands)
+        run: |
+          echo "doc-governance checks are MANUAL until the docgov CLI lands."
+          echo "See guides/INSTALL.md for the manual workflow. This step never fails."
+
+      # --- Deferred: enable once docgov ships (model v0.2.0) ---
+      # - name: Install docgov
+      #   run: pipx install docgov==0.2.0
+      # - name: Lint front matter and classes
+      #   run: docgov lint
+      # - name: Verify generated index is current
+      #   run: docgov index --check

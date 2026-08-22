@@ -1,0 +1,29 @@
+# .docgov/manifest.yml — per-repo docs-governance config.
+#
+# This file is the single source of truth for how the docs-governance model is
+# wired into THIS repo. It is what `docgov migrate` (deferred CLI) will read to
+# locate docs, build the index, and run the gate. Until the CLI lands, the
+# values here document the intended layout and are used by the MANUAL workflow.
+#
+# Copied verbatim from payload/ at adopt time; fill the placeholders below.
+
+# Version of the shared model this repo conforms to. Bumped by `docgov migrate`.
+model_version: 0.2.0
+
+# ISO date this repo adopted the model (set once, at adoption).
+adopted_at: "<YYYY-MM-DD>"   # fill with the adoption date
+
+# Where the governed artifacts live in this repo. Adjust to match the repo.
+paths:
+  docs_dir: docs              # root of governed documentation
+  index: MAIN.md              # generated documentation index / map
+  types: docs/_types.yml      # repo-local `type` vocabulary definitions
+  decisions: docs/decisions   # ADRs (feed the ADR -> reference propagation edge)
+  doc_todo: .docgov/.doc-todo  # grandfather list of exempt pre-existing files
+
+# Behavioural switches. All default to MANUAL because the docgov CLI +
+# pinned install are deferred to a later phase.
+options:
+  tooling: manual  # docgov CLI + pin-install deferred; run checks by hand for now
+  index: manual    # regenerate the index by hand (no generator yet)
+  ci: stub         # shipped workflow is a placeholder; no gate enforced yet

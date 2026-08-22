@@ -1,0 +1,16 @@
+# .doc-todo — grandfather list (the ratchet).
+#
+# One repo-relative path per line. Each listed path is a PRE-EXISTING,
+# non-conformant doc that is EXEMPT from the governance gate — a debt we agree
+# to carry, not to add to.
+#
+# Rules:
+#   - The list may ONLY shrink. Never add new entries.
+#   - Any NEW file, or any listed file you TOUCH, must be brought into
+#     conformance and its line removed.
+#   - An empty list means the repo is fully clean.
+#
+# Seed this at adopt time with the paths the initial scan flags as
+# non-conformant, then chip away.
+
+# (empty — seed at adopt time)

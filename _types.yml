@@ -1,0 +1,57 @@
+# _types.yml — the MASTER package's OWN document type enum (repo layer, OPEN).
+#
+# This is the ultimate dogfood: the docs-governance package governs itself with
+# the same schema payload/docs/_types.yml ships to target repos. These types
+# describe the master's OWN authored docs only.
+#
+# Shape of each entry:
+#
+#   <type>:
+#     class:    immutable | living | transient    # its default maintenance class
+#     raw:      true                               # OPTIONAL — forces tier: source (frozen evidence)
+#     archival: move | flag                        # OPTIONAL — how it is retired (move file | flag front matter)
+#     requires: [field, ...]                       # front-matter keys this type must carry
+#
+# Rules of thumb (identical to the payload schema):
+#   - `class` is closed & portable; `type` is local. Adding a type is ONE line — no model change.
+#   - `raw: true` ⟹ tier derives to `source` (never citeable) ⟹ the doc is immutable.
+#   - Attributes (audience, phase, domain, granularity, language) are NEVER types.
+#   - `tier` is DERIVED, never declared by a type or by hand.
+#
+# ── OUT of governance scope (no front matter required) ────────────────────────
+#   - payload/**   — distributable template files; validated when INSTANTIATED in a target repo.
+#   - examples/**  — distributable example artifacts; same reason (validated on instantiation).
+#   - spec/deck.html — an HTML teaching artifact (no YAML front matter); it is a COMPANION
+#                      of spec/model.md, tracked via that spec's `covers:` list.
+#   - VERSION      — data, not a document.
+#
+# The master's GOVERNANCE RULES are not a separate governance.md — they ARE
+# spec/model.md + spec/front-matter.md (this package is the model).
+
+# ── Living types ──────────────────────────────────────────────────────────────
+
+model-spec:                        # the normative model itself
+  class: living
+  requires: [covers, last_verified]   # spec/model.md, spec/front-matter.md
+
+guide:                             # how-to docs that explain adopting/authoring/migrating
+  class: living
+  requires: [covers, last_verified]   # guides/*.md, migrations/README.md
+
+entry:                             # navigation / bootstrap surfaces
+  class: living
+  requires: [covers, last_verified]   # README.md, MAIN.md
+
+changelog:                         # model-version history, kept current
+  class: living
+  requires: [covers, last_verified]   # CHANGELOG.md (covers VERSION)
+
+# ── Immutable types ───────────────────────────────────────────────────────────
+
+record:                            # a frozen point-in-time record — supersede, never edit
+  class: immutable
+  requires: [date]                    # PROVENANCE.md
+
+migration-guide:                   # records ONE version hop; frozen once the hop ships
+  class: immutable
+  requires: [date]                    # migrations/<from>-to-<to>.md
