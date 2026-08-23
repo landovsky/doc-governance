@@ -3,6 +3,7 @@
 # Shape of each entry:
 #
 #   <type>:
+#     description: <one line>                      # OPTIONAL — human/agent blurb; single line, not parsed by docgov
 #     class:    immutable | living | transient    # its default maintenance class
 #     raw:      true                               # OPTIONAL — forces tier: source (frozen evidence)
 #     archival: move | flag                        # OPTIONAL — how it is retired (move file | flag front matter)
@@ -17,42 +18,51 @@
 # ── Universal core types (every repo) ─────────────────────────────────────────
 
 adr:
+  description: architecture decision record — one decision; superseded, never edited
   class: immutable
   archival: flag                 # superseded ADRs stay in place, flagged via superseded_by
   requires: [id, date, superseded_by]
 
 record:
+  description: a frozen record of something that happened
   class: immutable
-  requires: [date]               # a frozen record of something that happened
+  requires: [date]
 
 transcript:
+  description: raw captured evidence (meeting/session) — inform only, weight by event_date
   class: immutable
   raw: true                      # tier: source — inform only, weight by event_date
   archival: move
   requires: [event_date]
 
 reference:
+  description: living reference — conventions, patterns, how things work
   class: living
   requires: [covers, last_verified]
 
 domain-doc:
+  description: living knowledge about one business/product domain
   class: living
   requires: [covers, last_verified, domain]
 
-runbook:                         # a.k.a. gitops
+runbook:
+  description: operational how-to (deploy/debug/backup/topology) — a.k.a. gitops
   class: living
   requires: [covers, last_verified]
 
 entry:
+  description: navigation / bootstrap surface (README / MAIN / CLAUDE / governance)
   class: living
-  requires: [covers, last_verified]   # README / MAIN / CLAUDE / governance
+  requires: [covers, last_verified]
 
 brief:
+  description: early-phase pitch/brief that advances to a spec
   class: transient
   archival: flag                 # phase pitch|brief; advances to spec
   requires: [status, phase]
 
 spec:
+  description: transient work spec — retired when its `ships:` PR/issue lands
   class: transient
   archival: flag
   requires: [status, ships]      # `ships:` links the PR/issue that retires it
@@ -60,11 +70,13 @@ spec:
 # ── Repo-specific examples (uncomment / adapt) ────────────────────────────────
 #
 # seo-audit:
+#   description: point-in-time SEO audit of a target — evidence, never edited
 #   class: immutable
 #   raw: true                    # tier: source
 #   archival: move
 #   requires: [event_date, target_url]
 #
 # incident:
+#   description: post-incident record — what happened, frozen
 #   class: immutable
 #   requires: [date, severity]

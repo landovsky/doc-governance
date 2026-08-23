@@ -7,6 +7,7 @@
 # Shape of each entry:
 #
 #   <type>:
+#     description: <one line>                      # OPTIONAL — human/agent blurb; single line, not parsed by docgov
 #     class:    immutable | living | transient    # its default maintenance class
 #     raw:      true                               # OPTIONAL — forces tier: source (frozen evidence)
 #     archival: move | flag                        # OPTIONAL — how it is retired (move file | flag front matter)
@@ -30,28 +31,34 @@
 
 # ── Living types ──────────────────────────────────────────────────────────────
 
-model-spec:                        # the normative model itself
+model-spec:
+  description: the normative model itself
   class: living
   requires: [covers, last_verified]   # spec/model.md, spec/front-matter.md
 
-guide:                             # how-to docs that explain adopting/authoring/migrating
+guide:
+  description: how-to docs that explain adopting/authoring/migrating
   class: living
   requires: [covers, last_verified]   # guides/*.md, migrations/README.md
 
-entry:                             # navigation / bootstrap surfaces
+entry:
+  description: navigation / bootstrap surfaces
   class: living
   requires: [covers, last_verified]   # README.md, MAIN.md
 
-changelog:                         # model-version history, kept current
+changelog:
+  description: model-version history, kept current
   class: living
   requires: [covers, last_verified]   # CHANGELOG.md (covers VERSION)
 
 # ── Immutable types ───────────────────────────────────────────────────────────
 
-record:                            # a frozen point-in-time record — supersede, never edit
+record:
+  description: a frozen point-in-time record — supersede, never edit
   class: immutable
   requires: [date]                    # PROVENANCE.md
 
-migration-guide:                   # records ONE version hop; frozen once the hop ships
+migration-guide:
+  description: records ONE version hop; frozen once the hop ships
   class: immutable
   requires: [date]                    # migrations/<from>-to-<to>.md
