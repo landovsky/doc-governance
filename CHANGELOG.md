@@ -38,6 +38,17 @@ and formalise the trust field the `living` class depends on. Migration:
   check but never stamps today's date on its own judgment; backfill uses the last
   genuine-confirmation date (**adopted ≠ verified**).
 
+### Tooling
+No model change — interim `bin/docgov` and CI distribution only (tag re-pointed while
+still pre-release; hriste is the sole, un-merged adopter).
+- **`docgov check`/`sweep` gain `-v`/`--verbose`** — lists every governed doc scanned (to
+  stderr; stdout stays the findings channel).
+- **Scope fix:** `governed_docs()` now prunes dot-directories (`.pytest_cache/`, `.venv/`, …),
+  so a tool-generated `README.md` no longer trips `check`.
+- **CI fetches a pinned `docgov`** instead of a vendored copy: the payload workflow curls the
+  tag-pinned `payload/bin/docgov` (`env.DOCGOV_VERSION`) from the model repo — reproducible,
+  no drift. `bin/docgov` is now local/dev-only.
+
 ## [0.2.0] — 2026-08-20
 
 ### Added

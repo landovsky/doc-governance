@@ -37,8 +37,8 @@ Copy from `$MASTER/payload/` into the **root of the target repo**, preserving re
 | `docs/governance.md` | `docs/governance.md` | in-repo, citable model entry point |
 | `.docgov/manifest.yml` | `.docgov/manifest.yml` | per-repo config; pins `model_version` |
 | `.docgov/.doc-todo` | `.docgov/.doc-todo` | shrink-only grandfather list (empty on install) |
-| `bin/docgov` | `bin/docgov` | the vendored linter/sweeper the CI gate runs (dependency-free) |
-| `.github/workflows/docs.yml` | `.github/workflows/docs.yml` | CI gate — runs `python3 bin/docgov check` (a **real** gate, not a stub) |
+| `bin/docgov` | `bin/docgov` | linter/sweeper for **local/dev** runs (optional — CI does not use it). Dependency-free. |
+| `.github/workflows/docs.yml` | `.github/workflows/docs.yml` | CI gate — **fetches the pinned `docgov`** (`env.DOCGOV_VERSION`) from a model-repo tag and runs `check` (a **real** gate, not a stub) |
 
 Rule of thumb: `payload/docs/*` → `docs/`, `payload/.docgov/*` → `.docgov/`,
 `payload/bin/docgov` → `bin/`, `payload/.github/workflows/docs.yml` → `.github/workflows/`.
@@ -57,15 +57,17 @@ Do these **in order** — later steps depend on earlier ones.
    cp $MASTER/payload/docs/governance.md                           docs/governance.md
    cp $MASTER/payload/.docgov/manifest.yml                         .docgov/manifest.yml
    cp $MASTER/payload/.docgov/.doc-todo                            .docgov/.doc-todo
-   cp $MASTER/payload/bin/docgov                                   bin/docgov && chmod +x bin/docgov
+   cp $MASTER/payload/bin/docgov                                   bin/docgov && chmod +x bin/docgov  # optional: local/dev only
    cp $MASTER/payload/.github/workflows/docs.yml                   .github/workflows/docs.yml
    ```
 2. **Pin the manifest** (`.docgov/manifest.yml`): confirm `model_version: 0.2.1` (must equal
    `$MASTER/VERSION`), set `adopted_at:` to today, set `owner:` (the repo-default steward — per-doc
    `owner:` is now only for overrides). Adjust `paths:` only if this
    repo's layout differs from the defaults (`docs/`, `MAIN.md`, `docs/decisions/`). Set
-   `options.ci: active` (the workflow runs the vendored `docgov check`); leave `index: manual`
-   (no generator yet) and `tooling: vendored` (the pinned `pipx install` is still deferred).
+   `options.ci: active` (the workflow fetches the pinned `docgov` — `env.DOCGOV_VERSION` in
+   `docs.yml`, matching `model_version` — and runs `check`); leave `index: manual`
+   (no generator yet) and `tooling: pinned` (CI pulls the tagged file; the `pipx install`
+   packaging is still deferred).
 3. **Fill placeholders** (step 3 below).
 4. **Tailor `docs/_types.yml`** to this repo's real doc kinds (step 4).
 5. **Bring the 5 minimum-set docs into being** (step 5) — these come **first**, before any
@@ -158,7 +160,8 @@ yourself, as a faithful reflection of the front matter that exists:
 
 ```
 [ ] payload/ copied: docs/_types.yml, docs/governance.md, .docgov/manifest.yml, .docgov/.doc-todo, bin/docgov (chmod +x), .github/workflows/docs.yml
-[ ] `python3 bin/docgov check` runs and passes (or only reports grandfathered files); the CI gate runs the same command
+[ ] `python3 bin/docgov check` runs and passes locally (or only reports grandfathered files); CI runs the same check via the pinned fetch
+[ ] docs.yml: DOCGOV_VERSION == model_version tag (e.g. v0.2.1) and the raw URL resolves (repo public, tag pushed)
 [ ] manifest.yml: model_version == $MASTER/VERSION (0.2.1); adopted_at + owner (repo default) set; paths checked
 [ ] all placeholders replaced (grep '<REPO>|<YYYY-MM-DD>|{{...}}' returns nothing)
 [ ] docs/_types.yml tailored to this repo's real doc kinds (raw: true on evidence types)
@@ -171,8 +174,10 @@ yourself, as a faithful reflection of the front matter that exists:
 [ ] committed as one adoption PR
 ```
 
-**CI is live:** `.github/workflows/docs.yml` runs the vendored `python3 bin/docgov check` on every PR —
-front matter, classes, tiers, `covers[]` existence, on-use field contracts, and dead internal links.
+**CI is live:** `.github/workflows/docs.yml` fetches the pinned `docgov` (`DOCGOV_VERSION` → a
+model-repo tag) and runs `check` on every PR — front matter, classes, tiers, `covers[]` existence,
+on-use field contracts, and dead internal links. The pin makes the gate reproducible; upgrade by
+bumping `DOCGOV_VERSION` (Renovate can auto-open that PR — snippet in `docs.yml`).
 **TODO (tooling, later):** `docgov adopt` (copy/pin/fill/seed) and `docgov index --check` (generated-index
-verification) are still deferred, and the check will eventually move to a pinned `pipx install docgov==<ver>`;
-until then the vendored `bin/docgov` is the whole gate.
+verification) are still deferred, and the pinned raw-file fetch will eventually become a pinned
+`pipx install docgov==<ver>` once packaging ships (same check semantics).
