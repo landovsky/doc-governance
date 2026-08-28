@@ -144,6 +144,19 @@ description: Deploy / debug / backup / topology for hriste-ops.
 
 ## transient  (every transient needs a terminal `status`; a `spec` also needs a `ships:` link)
 
+### Practice: per-chapter dispositions (optional, multi-chapter transient docs)
+
+For a `brief`/`spec` with several chapters, add one line under each heading naming
+where its content goes once the work ships — while the reasoning is still fresh.
+
+> **Disposition —** One or two sentences, a real destination (a file or mechanism),
+> not "move to docs".
+
+This is informal — not validated by CI, not a front-matter field. It's a forcing
+function for the retire-on-ship gate (§9.4 in `spec/model.md`): a transient with
+per-chapter dispositions already tells you what its `promoted_to:` target(s) should
+be when `status` goes terminal.
+
 ### `brief` — early proposal (canonical *as plan* while active)
 Use for a proposal in `phase: pitch|brief`. Retires by status flip.
 
