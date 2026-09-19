@@ -53,6 +53,11 @@ changelog:
 
 # ── Immutable types ───────────────────────────────────────────────────────────
 
+adr:
+  class: immutable
+  archival: flag                      # superseded ADRs stay, flagged via superseded_by
+  requires: [id, date, superseded_by] # docs/decisions/*.md — decisions about the model itself
+
 record:
   description: a frozen point-in-time record — supersede, never edit
   class: immutable

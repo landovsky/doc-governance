@@ -4,7 +4,7 @@ type: entry
 tier: canonical
 title: MAIN — Docs-Governance master index
 covers: [_types.yml]
-last_verified: 2026-08-22
+last_verified: 2026-09-19
 description: >
   The generated-style navigation index for the docs-governance master package —
   every governed doc grouped by role (Entry, Spec, Guides, Migrations, Records),
@@ -58,6 +58,12 @@ description: >
 |---|---|---|
 | [`PROVENANCE.md`](PROVENANCE.md) | record | How we arrived at v0.2 — evidence, synthesis, decisions (immutable). |
 | [`CHANGELOG.md`](CHANGELOG.md) | changelog | Model-version history (covers `VERSION`). |
+
+### Decisions
+
+| Doc | Type | Description |
+|---|---|---|
+| [`docs/decisions/0001-v0-3-0-generated-index-extension-hooks-proof-marker.md`](docs/decisions/0001-v0-3-0-generated-index-extension-hooks-proof-marker.md) | adr | Why 0.3.0 ships a generated index, extension hooks and the `**Proof:**` marker — and fixes the manifest spelling first. |
 
 The type enum for all of the above is [`_types.yml`](_types.yml).
 
