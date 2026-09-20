@@ -69,6 +69,16 @@ cannot mis-resolve; `options.index` renamed so it can never collide with `paths.
 again. The migration guide carries the rename for adopted repos, including hriste's
 `index_regen`.
 
+**And make the manifest answerable, not just consistent.** The collision is one symptom
+of a broader one: the manifest asserts things nothing checks. `options.ci: active` in
+the master names `.github/workflows/docs-governance.yml`, and the master has no
+`.github/` directory at all — CI has never existed in the repo that defines the model,
+while its own manifest claims otherwise. (The payload's `ci: active` is honest;
+`payload/.github/workflows/docs.yml` exists.) So 0.3.0 also adds a `check` rule that
+`options.ci: active` implies the named workflow file resolves, and the master either
+gets its own workflow or sets `ci: none`. A model repo failing its own gate is the one
+inconsistency that cannot ship.
+
 **Then, in this order** — each step unblocks the next, and the order is the release plan:
 
 1. **`docgov index [--write|--check]`** — emit the map from `registry` + `description`
@@ -98,6 +108,10 @@ Hooks change what "pinned" costs adopters. Today pinning means giving up local r
 after 0.3.0 it means local rules live in `.docgov/checks/` and survive upgrades. This
 also makes `**Proof:**` a real decision rather than a default: if it does not earn a
 place in the model, it ships as the hook exemplar instead, and nothing is lost.
+
+The new `ci` rule can fail an adopter's first 0.3.0 `check` — by design: it fails
+exactly where the manifest was already lying. `ci: none` is always an honest answer and
+always available.
 
 The manifest rename touches every adopted repo, which is the cost of doing it now
 rather than after a generator reads those keys. One adopter exists.
