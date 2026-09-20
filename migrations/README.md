@@ -36,7 +36,7 @@ migrations/<from>-to-<to>.md        e.g. migrations/0.1.0-to-0.2.0.md
 ## Applied transitively
 
 A repo several versions behind is walked forward **one hop at a time**, lowest to highest —
-`0.1.0-to-0.2.0.md`, then `0.2.0-to-0.3.0.md`, and so on — bumping `manifest.model_version`
+`0.1.0-to-0.2.0.md`, then `0.2.0-to-0.2.1.md`, then `0.2.1-to-0.3.0.md`, and so on — bumping `manifest.model_version`
 after each. The chain to apply is derived by comparing `manifest.model_version` to `VERSION`.
 
 ## Driven by `manifest.model_version`

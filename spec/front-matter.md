@@ -73,13 +73,35 @@ class then adds a **date-of-record**: `date` (the moment it is true as of) for *
 | `domain` | free | attribute, never a type |
 | `language` | `cs \| en` | |
 | `description` | text | drives the generated index line |
-| `registry` | `always \| decide \| none` | index inclusion hint |
+| `registry` | `always \| decide \| none` | index inclusion — **a rule, not a hint** (§7) |
 | `covers[]` | list of repo paths | freshness anchors (required for living) |
 | `last_verified` | ISO date | date a **steward** last confirmed the doc against `covers[]` (living). **Human-set attestation — an agent may run the check and propose a value but never stamps today's date itself** (symmetric to `stale`, set only by the sweep). |
 | `event_date` | ISO date | when raw evidence was captured (source) |
 | `source_of` | ref | what a raw doc was distilled into |
 | `promoted_to` / `superseded_by` | **path** / `none` | transformation links — a repo path to the target doc, checked to exist (`superseded_by` → an **immutable**, `promoted_to` → a **living**). Generic across all immutables, not ADR-only. |
 | `ships` | `#PR`/`#issue` | the work that retires a transient |
+
+## 4a. `**Proof:**` — the claim→evidence edge (body, not front matter)
+
+The one check priced per **paragraph** rather than per document. Under a claim, the marker
+cites what proves it as a backtick-quoted repo path, and that path must resolve:
+
+```markdown
+A task closes when its last subtask closes.
+
+**Proof:** `spec/models/task_spec.rb`
+```
+
+- A backticked value counts as a citation when it contains a `/` **and** ends in an
+  extension — so `#close!` and a describe-block name after an arrow are ignored.
+- A marker inside an inline code span or a fenced block is prose *about* the convention.
+- `**Source:**` keeps its older, free-prose provenance meaning and is never checked.
+- The check **fails open**: a path written without its extension is skipped, not flagged.
+  A green run is therefore evidence about the citations it recognised, not a proof that
+  every citation resolves.
+
+It is inert in a repo that never writes the marker, which is what lets a portable model
+carry a prose convention at all.
 
 ## 5. Closed enums
 
@@ -95,6 +117,28 @@ genre    : transcript | audit | research | experiment
 language : cs | en
 registry : always | decide | none
 ```
+
+## 7. `registry` — what the generated index lists
+
+`registry` was an "index inclusion hint" with three values and no stated rule until a
+generator forced the question. It resolves as:
+
+```
+listed(doc) :=
+  true       if doc.registry == always      # list it even when it is not citable (history on purpose)
+  false      if doc.registry == none        # never list it (scratch, companions, internal)
+  otherwise  tier(doc) == canonical AND status(doc) ∉ {shipped, superseded, archived, killed}
+```
+
+`decide` and an **absent** `registry` are the same thing, and that default is deliberate:
+the index is a map of the system **as it is now**, so source evidence (`tier: source`) and
+retired docs stay in the repo and out of the map unless a doc asks otherwise.
+
+The index is **generated** from `registry` + `type` + `description` (`docgov index --write`)
+into the region between `<!-- docgov:index -->` markers, so hand-written prose around it
+survives; `docgov index --check` fails CI when the block is stale. Sections are one per
+`type`, in `_types.yml` declaration order, headed by that type's `description` — the enum is
+already the outline, so the order is not kept in a second place.
 
 ## 6. Derivation rules — `tier` and `status` (never hand-set)
 

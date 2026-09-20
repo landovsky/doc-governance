@@ -44,10 +44,43 @@ it never changes the model. Attributes (phase, domain, language) are never types
 | `docs/governance.md` | living / entry | this page — the grammar, in-repo |
 | `docs/decisions/` + `ADR-0001` | immutable / adr | rationale; ADR-0001 adopts this model |
 
-## Enforcement — manual for now
+## Enforcement
 
-The `docgov` CLI (generated index + validator + CI gate + `.doc-todo` ratchet) is
-**deferred**. Until it is pin-installed, index generation and linting are **manual**:
-author front matter to the schema reference (canonical model: the docs-governance master
-in your dotfiles — `spec/front-matter.md`, `spec/model.md`), and keep the generated
-index (this repo's index file, e.g. `MAIN.md`) as an artifact — never a hand-kept registry.
+`docgov` runs the gate. CI fetches the version pinned in `.github/workflows/docs.yml`, so
+what blocks a merge is a tagged upstream, not whatever happens to sit in `bin/`.
+
+| Command | When | Blocking |
+|---|---|---|
+| `docgov check` | every PR | **yes** — front matter, tiers, `covers[]` existence, dead links, ADR numbering, `**Proof:**` citations, repo-local rules |
+| `docgov index --check` | every PR | **yes** — fails when the generated map is stale |
+| `docgov index --write` | after any front-matter edit; nightly | — regenerates the map |
+| `docgov sweep` | nightly | no — advisory freshness drift |
+| `docgov adr next` | before writing an ADR | no — the next number free on every visible branch |
+
+The index file (e.g. `MAIN.md`) is an **artifact**, never a hand-kept registry: the region
+between `<!-- docgov:index -->` markers is generated from front matter and an edit to it is
+lost on the next run. Prose outside the markers is yours and survives.
+
+### Repo-local rules
+
+A house rule belongs in `.docgov/checks/<name>.py`, **not** in a patch to `bin/docgov` —
+CI fetches the pinned upstream, so a patched CLI never runs in CI and is overwritten by the
+next version bump.
+
+```python
+def check(root, doc, fields):
+    """Return [(message, front_matter_key | None), …]. Findings gate like any built-in."""
+    return [] if fields.get("domain") else [("house rule: domain required", "title")]
+```
+
+`fields` is the front-matter dict and also carries `.covers`, `.text`, `.types`,
+`.manifest`, `.tier` and `.derived_status`. A module may export
+`sources(root, doc, fields) -> [path, …]` to add drift anchors beyond `covers[]`. Modules
+named `_*.py` are helpers. A rule that raises, or fails to import, is a finding.
+
+To grandfather a doc against **one** check rather than all of them, name it in
+`.docgov/.doc-todo`:
+
+```
+docs/legacy/old-thing.md  # check:house_rule — grandfathered for the house rule only
+```

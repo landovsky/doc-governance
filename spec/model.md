@@ -103,7 +103,8 @@ only the temporal anchors git cannot derive — `date`, `event_date`, `last_veri
 **Derived (never hand-set):** `tier` (§4); and `status` for `living` / `immutable` (above).
 **Optional attributes:** `phase` (pitch|brief|spec — transient only), `genre`
 (transcript|audit|research|experiment — raw types), `domain`, `language` (cs|en),
-`description` (drives the index line), `registry` (always|decide|none),
+`description` (drives the index line), `registry` (always|decide|none — the rule is
+front-matter.md §7),
 `promoted_to` / `superseded_by`, `ships` (#PR/issue that retires a transient), `owner` (per-doc override).
 
 ## 6. The freshness contract (the one predicate an agent runs)
@@ -167,11 +168,12 @@ The generated index (`registry.json`) is an **artifact**, not a sixth hand-kept 
 ## 9. Enforcement (ships WITH the model)
 
 1. **Blocking CI job from commit #1** — red build = merge blocked (not stderr warnings on 18%).
-2. **One generated index; hand-kept registries deleted in the adoption PR.** Editing the generated index fails CI.
-3. **Validator on 100% of canonical docs:** required keys present; `class`/`type`/`status` in-enum & legal; `tier` matches its computed value; `covers[]` present for living; **every `covers[]` path exists in THIS repo** (kills cross-repo contamination *and* un-propagated decisions); no dead internal links; ADR heading == filename number; every governed doc reachable from the index.
+2. **One generated index; hand-kept registries deleted in the adoption PR.** Emitted from `registry` + `type` + `description` between `<!-- docgov:index -->` markers (hand-written prose around them survives); `docgov index --check` fails CI when the block is stale, so "front matter *is* the index" is falsifiable rather than asserted.
+3. **Validator on 100% of canonical docs:** required keys present; `class`/`type`/`status` in-enum & legal; `tier` matches its computed value; `covers[]` present for living; **every `covers[]` path exists in THIS repo** (kills cross-repo contamination *and* un-propagated decisions); no dead internal links; ADR heading == filename number, and no two ADRs in one home claiming one number; every governed doc reachable from the index (by construction, once the index is generated); every `**Proof:**` citation resolves (front-matter.md §4a).
 4. **Retire-on-ship gate:** a PR closing an issue linked to a `transient(spec)` must add/patch a `living(reference)` (+ADR if a choice was encoded) and archive the spec, or CI fails.
 5. **Nightly freshness sweep:** flips any drifted canonical doc to `status: stale`, opens an issue, comments on PRs that touch a `covers[]` path without bumping `last_verified`.
-6. **Grandfather ratchet:** a `.doc-todo` list of pre-existing non-conformant files; it may **only shrink**; new/touched files must be clean.
+6. **Grandfather ratchet:** a `.doc-todo` list of pre-existing non-conformant files; it may **only shrink**; new/touched files must be clean. An entry may name a single check (`path  # check:<name>`) so it cannot silently widen into a blanket exemption as checks are added — a ratchet that only shrinks per-document but grows per-check does not only shrink.
+7. **Repo-local checks** in `.docgov/checks/*.py` — `check(root, doc, fields)` runs after the built-ins, inside the same output and exit code; `sources(root, doc, fields)` adds drift anchors to the sweep. Pinning the tool (the reproducible way to run the gate) must not be the same as giving up local rules, and a rule patched into a pinned CLI never runs in CI and is lost on the next bump. A hook that raises, or fails to import, is a finding — a broken rule must not read as a pass.
 
 ## 10. Two-layer split
 

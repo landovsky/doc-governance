@@ -18,9 +18,11 @@
 # Two tiers, matching model §9:
 #   check  — BLOCKING structural gate: front matter, classes, tiers, covers[]
 #            existence, on-use field contracts, dead internal links, ADR
-#            heading==filename. (Still deferred: generated-index §9.2, retire-on-ship §9.4.)
+#            heading==filename, **Proof:** citations, repo-local rules in
+#            .docgov/checks/, and the generated index block (§9.2, live since
+#            v0.3.0). (Still deferred: retire-on-ship §9.4.)
 #   drift  — NON-BLOCKING freshness sweep (§9.5): advises when a covers[] path
-#            moved past last_verified. Never blocks a merge.
+#            moved past last_verified, and regenerates the index. Never blocks a merge.
 name: docs-governance
 
 on:
@@ -39,7 +41,7 @@ on:
 
 env:
   # Pinned docgov version — an immutable git tag of the model repo. Bump to upgrade.
-  DOCGOV_VERSION: v0.2.1
+  DOCGOV_VERSION: v0.3.0
   DOCGOV_REPO: landovsky/doc-governance
 
 jobs:
@@ -56,6 +58,11 @@ jobs:
           chmod +x /tmp/docgov
       - name: docgov check
         run: python3 /tmp/docgov check
+      # The index is a DERIVED artifact under version control, so a front-matter edit
+      # needs `docgov index --write` in the same commit. That is the cost of the map
+      # being checkable at all; `--write` is one command and the nightly job runs it.
+      - name: docgov index --check
+        run: python3 /tmp/docgov index --check
 
   drift:                        # advisory freshness sweep — never blocks
     runs-on: ubuntu-latest
@@ -75,3 +82,7 @@ jobs:
           python3 /tmp/docgov sweep | tee -a "$GITHUB_STEP_SUMMARY"
           python3 /tmp/docgov sweep --exit-code \
             || echo "::warning::docs drifted — a covers[] path changed since last_verified; a steward should re-read and re-attest."
+      - name: docgov index (regenerate)
+        run: |
+          python3 /tmp/docgov index --write
+          git diff --stat -- . | tee -a "$GITHUB_STEP_SUMMARY"

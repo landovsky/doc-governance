@@ -8,7 +8,7 @@
 # Copied verbatim from payload/ at adopt time; fill the placeholders below.
 
 # Version of the shared model this repo conforms to. Bumped by `docgov migrate`.
-model_version: 0.2.1
+model_version: 0.3.0
 
 # ISO date this repo adopted the model (set once, at adoption).
 adopted_at: "<YYYY-MM-DD>"   # fill with the adoption date
@@ -18,16 +18,20 @@ adopted_at: "<YYYY-MM-DD>"   # fill with the adoption date
 owner: "@landovsky"          # fill with the repo's steward handle
 
 # Where the governed artifacts live in this repo. Adjust to match the repo.
+# One spelling per key, and every key unique across the WHOLE file (v0.3.0 / ADR-0001):
+# the pre-0.3.0 parser matched keys line-wise with no path context, so `paths.index` and
+# `options.index` were one key to it and this template resolved its index file to the
+# literal string "manual". Hence `options.index_mode` below.
 paths:
   docs_dir: docs              # root of governed documentation
-  index: MAIN.md              # generated documentation index / map
+  index: MAIN.md              # generated documentation index / map (`docgov index`)
   types: docs/_types.yml      # repo-local `type` vocabulary definitions
   decisions: docs/decisions   # the repo's ADR home — set to wherever ADRs live (docs/adr, …); feeds the ADR→reference edge
   doc_todo: .docgov/.doc-todo  # grandfather list of exempt pre-existing files
 
-# Behavioural switches. `check`/`sweep` + CI are LIVE via the vendored bin/docgov;
-# index generation and the pinned pip install remain deferred.
+# Behavioural switches. `check`/`sweep`/`index` + CI are LIVE via the vendored bin/docgov;
+# only the pinned pip install remains deferred.
 options:
-  tooling: vendored  # bin/docgov (copied from payload) provides `check` + `sweep`; pinned pip install deferred
-  index: manual      # regenerate the index by hand (no generator yet)
-  ci: active         # .github/workflows/docs.yml runs `python3 bin/docgov check` on every PR
+  tooling: vendored   # bin/docgov (copied from payload) provides `check` + `sweep` + `index`; pinned pip install deferred
+  index_mode: auto    # the index's marked region is generated — `docgov index --write`, gated by `--check`
+  ci: active          # .github/workflows/docs.yml runs `python3 bin/docgov check` on every PR

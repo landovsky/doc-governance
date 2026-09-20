@@ -9,9 +9,9 @@ covers:
   - spec/model.md
 last_verified: 2026-08-22
 description: >
-  Adopt the documentation-governance model (v0.2.1) in a fresh repo, by hand:
+  Adopt the documentation-governance model (v0.3.0) in a fresh repo, by hand:
   the exact copy-set from payload/, where each file lands, how to fill
-  placeholders, tailor docs/_types.yml, hand-write MAIN.md, seed .doc-todo,
+  placeholders, tailor docs/_types.yml, generate MAIN.md, seed .doc-todo,
   and pin the manifest model_version. Worked example: ~/git/hriste-ops.
 ---
 
@@ -60,19 +60,19 @@ Do these **in order** — later steps depend on earlier ones.
    cp $MASTER/payload/bin/docgov                                   bin/docgov && chmod +x bin/docgov  # optional: local/dev only
    cp $MASTER/payload/.github/workflows/docs.yml                   .github/workflows/docs.yml
    ```
-2. **Pin the manifest** (`.docgov/manifest.yml`): confirm `model_version: 0.2.1` (must equal
+2. **Pin the manifest** (`.docgov/manifest.yml`): confirm `model_version: 0.3.0` (must equal
    `$MASTER/VERSION`), set `adopted_at:` to today, set `owner:` (the repo-default steward — per-doc
    `owner:` is now only for overrides). Adjust `paths:` only if this
    repo's layout differs from the defaults (`docs/`, `MAIN.md`, `docs/decisions/`). Set
    `options.ci: active` (the workflow fetches the pinned `docgov` — `env.DOCGOV_VERSION` in
-   `docs.yml`, matching `model_version` — and runs `check`); leave `index: manual`
-   (no generator yet) and `tooling: pinned` (CI pulls the tagged file; the `pipx install`
-   packaging is still deferred).
+   `docs.yml`, matching `model_version` — and runs `check` + `index --check`); leave
+   `index_mode: auto` (the map is generated) and `tooling: pinned` (CI pulls the tagged
+   file; the `pipx install` packaging is still deferred).
 3. **Fill placeholders** (step 3 below).
 4. **Tailor `docs/_types.yml`** to this repo's real doc kinds (step 4).
 5. **Bring the 5 minimum-set docs into being** (step 5) — these come **first**, before any
    backfill of the rest of the corpus.
-6. **Hand-write `MAIN.md`** — the generated index, by hand for now (step 6).
+6. **Generate `MAIN.md`** — add the index markers and run `docgov index --write` (step 6).
 7. **Seed `.doc-todo`** if the repo already has non-conformant markdown — but that is the
    [DIRTY-REPO-PLAYBOOK](DIRTY-REPO-PLAYBOOK.md); a fresh repo leaves `.doc-todo` empty.
 8. **Commit** the whole adoption in one PR (payload + MAIN.md + filled docs). ADR-0001 records
@@ -132,18 +132,35 @@ question:**
 | Member | class / type | Action on install |
 |---|---|---|
 | `README.md` | living / entry | if it already exists: **grandfather** into `.doc-todo`, backfill first (do NOT edit at adopt time); if absent: create conformant |
-| `MAIN.md` | living / entry (generated index) | create — hand-write it now — see step 6 |
+| `MAIN.md` | living / entry (generated index) | create the prose + the two markers, then `docgov index --write` — see step 6 |
 | `CLAUDE.md` = `AGENTS.md` | living / entry | create if absent (front matter; keep `AGENTS.md` a symlink); grandfather if it pre-exists |
 | `docs/governance.md` | living / entry | create — copied from payload; placeholders filled |
 | adopt-this-model ADR | immutable / adr | **author** it in the repo's ADR home (`manifest.paths.decisions`, default `docs/decisions/`) using the repo's numbering & format — in a repo with existing ADRs it takes the **next** number, not `0001`. Adapt the content template `payload/docs/decisions/0001-adopt-doc-governance.md` and fill `date`. |
 
 ---
 
-## 6. Create the first `MAIN.md` index BY HAND
+## 6. Generate the first `MAIN.md` index
 
-The index is normally **generated from front matter** — hand-kept registries are banned. But
-the generator is **TODO (tooling, later)** (`docgov index`). Until then you write `MAIN.md`
-yourself, as a faithful reflection of the front matter that exists:
+The index is **generated from front matter** — hand-kept registries are banned, and since
+0.3.0 that is enforced rather than asked for. You write the prose; `docgov index --write`
+writes the map into the region between two markers, and `docgov index --check` fails CI when
+that region is stale.
+
+```markdown
+<!-- docgov:index -->
+<!-- /docgov:index -->
+```
+
+```bash
+python3 bin/docgov index --write     # fill the region
+python3 bin/docgov index --check     # what CI runs
+```
+
+Sections come out one per `type`, in the order `docs/_types.yml` declares them, headed by
+that type's `description` — so the shape of the map is tuned by editing the type enum, not
+the map. Which docs are listed is the `registry` rule (`spec/front-matter.md` §7): `always`
+lists it regardless, `none` never lists it, and absent/`decide` lists it iff it is citable
+today. What follows describes the map you should expect to see:
 
 1. Front matter: `class: living`, `type: entry`, `status: active`, `owner`, `updated`,
    `covers: [docs/_types.yml]`, `last_verified`. (`tier` derives to `canonical`.)
@@ -161,13 +178,13 @@ yourself, as a faithful reflection of the front matter that exists:
 ```
 [ ] payload/ copied: docs/_types.yml, docs/governance.md, .docgov/manifest.yml, .docgov/.doc-todo, bin/docgov (chmod +x), .github/workflows/docs.yml
 [ ] `python3 bin/docgov check` runs and passes locally (or only reports grandfathered files); CI runs the same check via the pinned fetch
-[ ] docs.yml: DOCGOV_VERSION == model_version tag (e.g. v0.2.1) and the raw URL resolves (repo public, tag pushed)
-[ ] manifest.yml: model_version == $MASTER/VERSION (0.2.1); adopted_at + owner (repo default) set; paths checked
+[ ] docs.yml: DOCGOV_VERSION == model_version tag (e.g. v0.3.0) and the raw URL resolves (repo public, tag pushed)
+[ ] manifest.yml: model_version == $MASTER/VERSION (0.3.0); adopted_at + owner (repo default) set; paths use index/types/decisions/doc_todo and options.index_mode
 [ ] all placeholders replaced (grep '<REPO>|<YYYY-MM-DD>|{{...}}' returns nothing)
 [ ] docs/_types.yml tailored to this repo's real doc kinds (raw: true on evidence types)
 [ ] adopt-this-model ADR authored at manifest.paths.decisions (repo's numbering/format); date filled; heading number matches filename
-[ ] 5 minimum-set docs present & carry v0.2.1 front matter (README, MAIN.md, CLAUDE.md/AGENTS.md, docs/governance.md, adopt-this-model ADR)
-[ ] MAIN.md hand-written from front matter (provisional; regenerated once docgov ships)
+[ ] 5 minimum-set docs present & carry v0.3.0 front matter (README, MAIN.md, CLAUDE.md/AGENTS.md, docs/governance.md, adopt-this-model ADR)
+[ ] MAIN.md carries the two docgov:index markers and `docgov index --check` exits 0
 [ ] no tier: hand-invented anywhere (tier is derived)
 [ ] .doc-todo empty (fresh repo) OR seeded per DIRTY-REPO-PLAYBOOK (messy repo)
 [ ] any old hand-kept registries deleted in THIS PR
@@ -176,8 +193,11 @@ yourself, as a faithful reflection of the front matter that exists:
 
 **CI is live:** `.github/workflows/docs.yml` fetches the pinned `docgov` (`DOCGOV_VERSION` → a
 model-repo tag) and runs `check` on every PR — front matter, classes, tiers, `covers[]` existence,
-on-use field contracts, and dead internal links. The pin makes the gate reproducible; upgrade by
-bumping `DOCGOV_VERSION` (Renovate can auto-open that PR — snippet in `docs.yml`).
-**TODO (tooling, later):** `docgov adopt` (copy/pin/fill/seed) and `docgov index --check` (generated-index
-verification) are still deferred, and the pinned raw-file fetch will eventually become a pinned
-`pipx install docgov==<ver>` once packaging ships (same check semantics).
+on-use field contracts, dead internal links, and `docgov index --check`. The pin makes the gate
+reproducible; upgrade by bumping `DOCGOV_VERSION` (Renovate can auto-open that PR — snippet in
+`docs.yml`). A house rule of your own goes in `.docgov/checks/*.py`, **not** in a patch to the
+vendored `bin/docgov`: CI runs the pinned upstream, so a patched CLI never runs in CI and is
+overwritten by the next bump. See `payload/docs/governance.md` and `examples/docgov-checks/`.
+**TODO (tooling, later):** `docgov adopt` (copy/pin/fill/seed) is still deferred, and the pinned
+raw-file fetch will eventually become a pinned `pipx install docgov==<ver>` once packaging ships
+(same check semantics).

@@ -5,7 +5,7 @@ tier: canonical
 title: Docs-Governance System
 covers: [spec/model.md, VERSION]
 last_verified: 2026-08-22
-description: Master entry for the portable documentation-governance system (model v0.2.1) — the class × tier × type model, its payload, guides, and current adoption status.
+description: Master entry for the portable documentation-governance system (model v0.3.0) — the class × tier × type model, its payload, guides, and current adoption status.
 ---
 
 # Docs-Governance System
@@ -18,7 +18,7 @@ gate, and a grandfather ratchet:
 - **tier** (citeability, *derived* from class + placement) — `canonical` / `source` / `archive`
 - **type** (repo-local vocabulary) — e.g. `entry`, `adr`, `reference`, `runbook`
 
-Current model version: **0.2.1** (see [`VERSION`](VERSION)).
+Current model version: **0.3.0** (see [`VERSION`](VERSION)).
 
 ## Directory map
 
@@ -38,11 +38,13 @@ Current model version: **0.2.1** (see [`VERSION`](VERSION)).
 - **Understanding the model?** → [`spec/model.md`](spec/model.md).
 - **Why is it built this way?** → [`PROVENANCE.md`](PROVENANCE.md).
 
-> ## STATUS — checks & CI live; some tooling still deferred
+> ## STATUS — the index is generated; two pieces of tooling still deferred
 > **`bin/docgov` is real and the CI gate runs it:** `docgov check` (front matter,
-> classes, tiers, `covers[]`, on-use field contracts, dead internal links) and
-> `docgov sweep` (freshness drift) both work today, and `.github/workflows/` runs
-> `docgov check` on every PR. Still deferred: the **generated index** (`MAIN.md` is
-> hand-written), `docgov adopt`, and the pinned `pipx install docgov==<ver>` (the
+> classes, tiers, `covers[]`, on-use field contracts, dead internal links, ADR
+> numbering, `**Proof:**` citations, and repo-local rules from `.docgov/checks/`),
+> `docgov index --check` (the map is generated from front matter and stale blocks
+> fail CI — new in 0.3.0), `docgov sweep` (freshness drift) and `docgov adr next`
+> all work today, and `.github/workflows/` runs the gate on every PR.
+> Still deferred: `docgov adopt`, and the pinned `pipx install docgov==<ver>` (the
 > vendored `bin/docgov` stands in until then). Model spec, front matter, and
 > templates are stable and usable today.

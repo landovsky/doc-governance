@@ -54,6 +54,7 @@ changelog:
 # ── Immutable types ───────────────────────────────────────────────────────────
 
 adr:
+  description: a ratified non-obvious choice about the model itself
   class: immutable
   archival: flag                      # superseded ADRs stay, flagged via superseded_by
   requires: [id, date, superseded_by] # docs/decisions/*.md — decisions about the model itself

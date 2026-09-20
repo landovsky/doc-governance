@@ -8,7 +8,7 @@ covers:
   - payload/docs/_types.yml
 last_verified: 2026-08-22
 description: >
-  A worked v0.2.1 front-matter block per class and common type (adr, transcript,
+  A worked v0.3.0 front-matter block per class and common type (adr, transcript,
   reference, domain-doc, runbook, brief, spec) with when-to-use, plus the golden
   rules: tier is derived, covers[] is required for living, last_verified without
   covers[] is rejected, a spec needs a ships: link, supersede-not-delete.
@@ -40,7 +40,7 @@ in [`spec/front-matter.md`](../spec/front-matter.md); this is the practical cook
 - **Backfilling a pre-existing living doc: adopted ≠ verified.** Set `last_verified` to the date
   the content was last genuinely confirmed (in practice the git author-date of its last
   substantive edit), **not** today — see [DIRTY-REPO-PLAYBOOK](DIRTY-REPO-PLAYBOOK.md) §4.
-- **Required core is just `class`, `type`, `title`** (v0.2.1) + the class's date-of-record (`date`
+- **Required core is just `class`, `type`, `title`** (since v0.2.1) + the class's date-of-record (`date`
   for immutable/source · `last_verified` for living · `status`/`ships` for transient). `status` is
   authored only on `transient`; `owner` defaults from `.docgov/manifest.yml`; there is no `updated`
   (read git for content-last-changed) and no `audience`/`granularity`.
@@ -193,3 +193,55 @@ description: The detailed build plan for the external portal.
 ```
 On ship: add/patch the `living(reference)` it promotes to, set `promoted_to:`, flip `status:` to
 a terminal value — it derives to `tier: archive`. On kill: `status: killed` (also archive).
+
+---
+
+## Body conventions the gate reads
+
+Front matter is where trust is computed, but two things in the **body** are checked.
+
+### `**Proof:**` — cite the spec that proves a claim
+
+Under a claim, cite the evidence as a backtick-quoted repo path. The path must resolve, so a
+spec that moves takes the claim down with it instead of leaving a confident sentence nobody
+re-read. This is the only check priced per **paragraph** rather than per document, which is
+what makes it worth writing by hand.
+
+```markdown
+A task closes when its last subtask closes.
+
+**Proof:** `spec/models/task_spec.rb`
+```
+
+- Backticked values that are not paths are ignored — `#close!`, a describe-block name.
+- A marker inside an inline code span or a fenced block is prose *about* the convention.
+- **`**Source:**` is a different marker.** It means provenance — where something came from,
+  a meeting, a vendor page — stays free prose, and is never checked. Do not use it for
+  evidence; that ambiguity is exactly what splitting the two markers fixed.
+- It fails *open*: a path written without its extension is skipped rather than flagged. Treat
+  a green run as evidence about the citations it recognised, not a guarantee.
+
+### Internal links must resolve
+
+Every `[text](path)` and reference definition pointing at a repo path is checked. Links in
+fenced blocks and inline code spans are not, so a doc can show a broken example on purpose.
+
+## Repo-local rules
+
+If your repo needs a convention this model does not carry, write it as a check in
+`.docgov/checks/<name>.py` — **never** as a patch to `bin/docgov`, which CI fetches from a
+pinned upstream and which the next version bump overwrites:
+
+```python
+def check(root, doc, fields):
+    """Return [(message, front_matter_key | None), …]. Findings gate like any built-in."""
+    return [] if fields.get("domain") else [("house rule: domain required", "type")]
+```
+
+Worked examples, including a `sources()` hook that adds drift anchors to the sweep, are in
+[`../examples/docgov-checks/`](../examples/docgov-checks/). To grandfather a doc against one
+rule rather than all of them, name it in `.docgov/.doc-todo`:
+
+```
+docs/legacy/old-thing.md  # check:house_rule — grandfathered for the house rule only
+```

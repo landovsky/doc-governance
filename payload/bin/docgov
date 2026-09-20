@@ -1,13 +1,20 @@
 #!/usr/bin/env python3
-"""docgov — interim CLI for the documentation-governance model (v0.2.x).
+"""docgov — interim CLI for the documentation-governance model (v0.3.x).
 
-Dependency-free, self-contained. Two subcommands:
+Dependency-free, self-contained. Four subcommands:
 
   docgov sweep [--write]   freshness sweep — list living docs whose covers[] drifted
                            past last_verified; --write stamps `status: stale` on them
                            (the machine-set marker; never hand-authored).
   docgov check             lint — print every governed doc that violates the model.
                            Honors .docgov/.doc-todo; exits non-zero on any violation.
+  docgov index [--write|--check]
+                           generate the navigation index from front matter
+                           (`registry` + `type` + `description`) into the region
+                           between the docgov:index markers of the index file.
+  docgov adr next|audit    ADR numbering across branches — `next` proposes the next
+                           free number; `audit` reports slug/number disagreements.
+                           Neither fetches; both are advisory, never a gate.
 
 Two rules govern the field checks below:
   · Optional fields are validated ONLY when present — because the code leans on them
@@ -15,11 +22,16 @@ Two rules govern the field checks below:
   · The rule set grows ADDITIVELY — adding a check for a new optional field is a line
     here, no migration. Only removals / renames / retypes are breaking.
 
+Repo-local rules live in `.docgov/checks/*.py` (v0.3.0), NOT in a patch to this file:
+CI fetches this script from a pinned upstream tag, so an edit here is invisible to the
+gate and is overwritten by the next version bump. See `load_hooks` for the contract.
+
 Scope: the repo/package rooted at the nearest ancestor containing `.docgov/`.
 Governed = every *.md under it except payload/**, examples/** (templates/companions)
 and any dot-directory (.git/, .pytest_cache/, .venv/ … — VCS and tool-generated).
 """
-import argparse, datetime, os, re, subprocess, sys
+import argparse, datetime, importlib.util, os, re, subprocess, sys
+from importlib.machinery import SourceFileLoader
 
 CLASSES = {"immutable", "living", "transient"}
 STATUS_ENUM = {"draft", "active", "shipped", "superseded", "archived", "killed",
@@ -34,6 +46,31 @@ ENUM_FIELDS = {"phase": {"pitch", "brief", "spec"},
                "language": {"cs", "en"}, "registry": {"always", "decide", "none"}}
 # on-use link contracts: field -> required target class (None = just-must-exist)
 LINK_TARGET = {"superseded_by": "immutable", "promoted_to": "living", "source_of": None}
+
+# Named check groups — the vocabulary `.doc-todo` uses to exempt a doc from ONE check
+# (`path  # check:proof`) instead of from the whole gate. A repo-local hook's name is
+# its module name, so `.docgov/checks/proof_links.py` is exempted as `check:proof_links`.
+BUILTIN_CHECKS = ("front-matter", "links", "proof", "adr")
+
+INDEX_BEGIN = "<!-- docgov:index -->"
+INDEX_END = "<!-- /docgov:index -->"
+
+# Manifest key aliases. The master package and the shipped payload historically spelled
+# these differently (`index_file` vs `index`); the SHORT form is canonical from v0.3.0
+# and the long one stays readable so an un-migrated manifest keeps working.
+PATH_ALIASES = {"docs_dir": ("docs_dir",),
+                "index": ("index", "index_file"),
+                "types": ("types", "types_file"),
+                "decisions": ("decisions", "decisions_dir"),
+                "doc_todo": ("doc_todo", "todo_file")}
+# `options.index` is RENAMED to `index_mode` in 0.3.0 (ADR-0001): a nesting-blind parser
+# resolved `paths.index` and `options.index` to the same key, and the shipped payload
+# therefore resolved its index file to the literal string "manual". The old spellings —
+# and hriste's local `index_regen` workaround — still read, so an un-migrated repo works.
+OPTION_ALIASES = {"index_mode": ("index_mode", "index_regen", "index")}
+
+# The claim→evidence edge (ADR-0001 §3). Inert in a repo that never writes the marker.
+PROOF_MARKER = "**Proof:**"
 
 
 def key_line(path, key):
@@ -53,7 +90,7 @@ def vlog(on, msg):
 def sh(*args):
     try:
         return subprocess.check_output(args, stderr=subprocess.DEVNULL).decode().strip()
-    except subprocess.CalledProcessError:
+    except (subprocess.CalledProcessError, FileNotFoundError):
         return ""
 
 
@@ -94,7 +131,12 @@ def _is_iso_date(s):
 
 
 def parse_fm(text):
-    """Return (fields: dict, covers: list) from the leading --- front matter, or None."""
+    """Return (fields: dict, covers: list) from the leading --- front matter, or None.
+
+    Block scalars (`description: >` / `|` and their chomping variants) are folded into
+    one string — the generated index line comes from `description`, so dropping the
+    continuation would render every multi-line description as a bare `>`.
+    """
     m = re.match(r"^---\n(.*?)\n---", text, re.S)
     if not m:
         return None
@@ -122,25 +164,81 @@ def parse_fm(text):
                         i = j - 1
                     elif val:                       # bare scalar form: `covers: some/path.md`
                         covers = [_scalar(val)]
+            elif val in (">", "|", ">-", "|-", ">+", "|+"):
+                j = i + 1
+                block = []
+                while j < len(lines) and (not lines[j].strip() or lines[j][:1] in (" ", "\t")):
+                    block.append(lines[j].strip())
+                    j += 1
+                sep = "\n" if val.startswith("|") else " "
+                fields[key] = sep.join(x for x in block if x).strip()
+                i = j - 1
             else:
                 fields[key] = _scalar(val)
         i += 1
     return fields, covers
 
 
-def load_types(root):
-    """Minimal parser for _types.yml → {type: {class, raw, requires:[...]}}."""
-    path = os.path.join(root, "_types.yml")
-    if not os.path.exists(path):
-        path = os.path.join(root, "docs", "_types.yml")
+# ── manifest ─────────────────────────────────────────────────────────────────
+def load_manifest(root):
+    """Two-level parse of .docgov/manifest.yml → {key: scalar | {key: scalar}}."""
+    p = os.path.join(root, ".docgov", "manifest.yml")
+    man, cur = {}, None
+    for ln in (_read(p).splitlines() if os.path.exists(p) else []):
+        if not ln.strip() or ln.lstrip().startswith("#"):
+            continue
+        top = re.match(r"^([A-Za-z_][\w-]*):\s*(.*)$", ln)
+        if top:
+            key, val = top.group(1), top.group(2).strip()
+            if val:
+                man[key], cur = _scalar(val), None
+            else:
+                man[key], cur = {}, key
+            continue
+        nested = re.match(r"^\s+([A-Za-z_][\w-]*):\s*(.*)$", ln)
+        if nested and cur and isinstance(man.get(cur), dict):
+            man[cur][nested.group(1)] = _scalar(nested.group(2).strip())
+    return man
+
+
+def mpath(man, name, default=None):
+    """A `paths.<name>` value, accepting the pre-0.3.0 spelling (see PATH_ALIASES)."""
+    paths = man.get("paths")
+    if isinstance(paths, dict):
+        for alias in PATH_ALIASES.get(name, (name,)):
+            if paths.get(alias):
+                return paths[alias]
+    return default
+
+
+def mopt(man, name, default=None):
+    """An `options.<name>` value, accepting its documented aliases."""
+    opts = man.get("options")
+    if isinstance(opts, dict):
+        for alias in OPTION_ALIASES.get(name, (name,)):
+            if opts.get(alias):
+                return opts[alias]
+    return default
+
+
+def load_types(root, man=None):
+    """Minimal parser for _types.yml → ordered {type: {class, raw, requires, description}}.
+
+    Insertion order is meaningful: the generated index emits one section per type in
+    the order the enum declares them, so `_types.yml` doubles as the index's outline.
+    """
+    man = load_manifest(root) if man is None else man
+    candidates = [mpath(man, "types"), "_types.yml", os.path.join("docs", "_types.yml")]
+    path = next((os.path.join(root, c) for c in candidates
+                 if c and os.path.exists(os.path.join(root, c))), None)
     types, cur = {}, None
-    for ln in (_read(path).splitlines() if os.path.exists(path) else []):
+    for ln in (_read(path).splitlines() if path else []):
         if not ln.strip() or ln.lstrip().startswith("#"):
             continue
         top = re.match(r"^([A-Za-z_][\w-]*):\s*(#.*)?$", ln)
         if top:
             cur = top.group(1)
-            types[cur] = {"class": None, "raw": False, "requires": []}
+            types[cur] = {"class": None, "raw": False, "requires": [], "description": ""}
             continue
         nested = re.match(r"^\s+([A-Za-z_]+):\s*(.*)$", ln)
         if nested and cur:
@@ -151,29 +249,22 @@ def load_types(root):
                 types[cur]["raw"] = v.lower() == "true"
             elif k == "requires":
                 types[cur]["requires"] = [x.strip() for x in v.strip("[]").split(",") if x.strip()]
+            elif k == "description":
+                types[cur]["description"] = v.strip().strip('"').strip("'")
     return types
 
 
-def manifest_scope(root):
+def manifest_scope(root, man=None):
     """(docs_dir, index_file) from .docgov/manifest.yml, or (None, None)."""
-    p = os.path.join(root, ".docgov", "manifest.yml")
-    docs_dir = index = None
-    if os.path.exists(p):
-        for ln in _read(p).splitlines():
-            m = re.match(r"^\s*docs_dir:\s*(\S+)", ln)
-            if m:
-                docs_dir = m.group(1).strip().strip('"')
-            m = re.match(r"^\s*(?:index|index_file):\s*(\S+)", ln)
-            if m:
-                index = m.group(1).strip().strip('"')
-    return docs_dir, index
+    man = load_manifest(root) if man is None else man
+    return mpath(man, "docs_dir"), mpath(man, "index")
 
 
-def governed_docs(root):
+def governed_docs(root, man=None):
     """Governed *.md. If the manifest sets a `docs_dir`, scope to it + the named core
     files (an adopting repo, so vendor/, .venv/ … are ignored); otherwise walk the
     whole package excluding templates (the flat, self-governing master)."""
-    docs_dir, index = manifest_scope(root)
+    docs_dir, index = manifest_scope(root, man)
     if docs_dir and docs_dir not in (".", "./", ""):
         base = os.path.join(root, docs_dir)
         for dp, dirs, files in os.walk(base):
@@ -194,11 +285,29 @@ def governed_docs(root):
                     yield os.path.join(dp, f)
 
 
-def doc_todo(root):
-    p = os.path.join(root, ".docgov", ".doc-todo")
+def doc_todo(root, man=None):
+    """Grandfather list → {relpath: None | {check-name, …}}.
+
+    A bare line exempts the doc from the WHOLE gate, as it always has. A trailing
+    `# check:<name>[,<name>]` narrows the exemption to those checks, so adopting a new
+    check does not silently widen an old exemption into a blanket one (the ratchet in
+    model §9.6 is only meaningful if an entry cannot grow in scope on its own).
+    """
+    p = os.path.join(root, mpath(load_manifest(root) if man is None else man,
+                                 "doc_todo", os.path.join(".docgov", ".doc-todo")))
+    out = {}
     if not os.path.exists(p):
-        return set()
-    return {ln.split("#")[0].strip() for ln in _read(p).splitlines() if ln.split("#")[0].strip()}
+        return out
+    for ln in _read(p).splitlines():
+        if not ln.strip() or ln.lstrip().startswith("#"):
+            continue
+        path, _, comment = ln.partition("#")
+        path = path.strip()
+        if not path:
+            continue
+        m = re.search(r"\bcheck:([\w,.\-]+)", comment)
+        out[path] = {x.strip() for x in m.group(1).split(",") if x.strip()} if m else None
+    return out
 
 
 def target_class(root, relpath):
@@ -221,6 +330,127 @@ def expected_tier(fields, traw):
     return "canonical"
 
 
+def derived_status(fields, traw):
+    """`status(doc)` from model §6 — the authored value, else the class default."""
+    if fields.get("status"):
+        return fields["status"]
+    cls = fields.get("class")
+    if cls == "living":
+        return "active"
+    if cls == "immutable":
+        if fields.get("superseded_by", "none") not in ("", "none"):
+            return "superseded"
+        return None if traw else "accepted"   # raw/source: status is not a meaningful axis
+    return None
+
+
+# ── repo-local checks (.docgov/checks/*.py) ─────────────────────────────────
+class Fields(dict):
+    """The `fields` a repo-local check receives.
+
+    ADR-0001 fixes the contract at `check(root, doc, fields) -> [(message, key|None)]`
+    and `fields` is the front-matter dict, so that is what this is. The attributes below
+    are additive: a hook written to the letter of that signature never sees them, and one
+    that needs `covers[]` or the type table gets it without re-reading and re-parsing a
+    file docgov has already read.
+
+        .covers   parsed covers[] (kept out of the dict, as parse_fm returns it)
+        .text     the full file text        .types / .manifest  the parsed config
+        .typedef / .raw                     .tier / .derived_status   as the model DERIVES them
+    """
+
+    covers, text, types, manifest = (), "", {}, {}
+    typedef, raw, tier, derived_status = None, False, "canonical", None
+
+
+def make_fields(fields, covers, text, types, man):
+    f = Fields(fields)
+    f.covers, f.text, f.types, f.manifest = list(covers), text, types, man
+    f.typedef = types.get(fields.get("type"))
+    f.raw = bool(f.typedef and f.typedef["raw"])
+    f.tier = expected_tier(fields, f.raw)
+    f.derived_status = derived_status(fields, f.raw)
+    return f
+
+
+class Hook:
+    __slots__ = ("name", "path", "module", "error")
+
+    def __init__(self, name, path, module, error):
+        self.name, self.path, self.module, self.error = name, path, module, error
+
+
+def load_hooks(root):
+    """Load `.docgov/checks/*.py` — repo-local rules that run inside the pinned gate.
+
+    Under `tooling: pinned` CI fetches this script from a tagged upstream, so a rule
+    added by editing it never runs in CI and is overwritten by the next version bump.
+    A rule placed here does neither. Each module may export either or both of:
+
+        def check(root, doc, fields)   -> [(message, front_matter_key | None), …]
+        def sources(root, doc, fields) -> [repo_path, …]     # extra sweep drift anchors
+
+    Modules whose name starts with `_` are helpers, not checks. A module that fails to
+    import is reported once and fails the gate — a broken rule must not read as a pass.
+    """
+    d = os.path.join(root, ".docgov", "checks")
+    hooks = []
+    if not os.path.isdir(d):
+        return hooks
+    for fn in sorted(os.listdir(d)):
+        if not fn.endswith(".py") or fn.startswith("_"):
+            continue
+        name, path = fn[:-3], os.path.join(d, fn)
+        try:
+            loader = SourceFileLoader(f"docgov_check_{name}", path)
+            spec = importlib.util.spec_from_loader(loader.name, loader)
+            mod = importlib.util.module_from_spec(spec)
+            loader.exec_module(mod)
+            hooks.append(Hook(name, path, mod, None))
+        except Exception as e:                                  # noqa: BLE001 — report, don't crash
+            hooks.append(Hook(name, path, None, f"{type(e).__name__}: {e}"))
+    return hooks
+
+
+def run_hooks(hooks, root, doc, fields):
+    """Tagged findings from every loaded hook. A raising hook is a finding, not a crash.
+
+    A hook that blew up has not passed, so it goes red like any other finding; crashing
+    the gate instead would take the built-in results down with it.
+    """
+    out = []
+    for h in hooks:
+        fn = getattr(h.module, "check", None) if h.module else None
+        if not callable(fn):
+            continue
+        try:
+            found = fn(root, doc, fields) or []
+        except Exception as e:                                  # noqa: BLE001
+            out.append((h.name, f"check hook raised on this doc: {type(e).__name__}: {e}", None))
+            continue
+        for item in found:
+            if isinstance(item, (tuple, list)) and len(item) == 2:
+                msg, key = item
+            else:
+                msg, key = item, None
+            out.append((h.name, str(msg), key))
+    return out
+
+
+def hook_sources(hooks, root, doc, fields):
+    """Extra drift anchors a hook contributes beyond the doc's own covers[]."""
+    out = []
+    for h in hooks:
+        fn = getattr(h.module, "sources", None) if h.module else None
+        if not callable(fn):
+            continue
+        try:
+            out.extend(str(x) for x in (fn(root, doc, fields) or []))
+        except Exception:                                       # noqa: BLE001
+            continue        # a raising sources() is already reported by check(); never fail the sweep
+    return out
+
+
 # ── sweep ──────────────────────────────────────────────────────────────────
 def dirty_set():
     # NB: do NOT route through sh() — its .strip() would eat the leading status
@@ -228,7 +458,7 @@ def dirty_set():
     try:
         raw = subprocess.check_output(["git", "status", "--porcelain"],
                                       stderr=subprocess.DEVNULL).decode()
-    except subprocess.CalledProcessError:
+    except (subprocess.CalledProcessError, FileNotFoundError):
         return set()
     out = set()
     for line in raw.splitlines():
@@ -250,15 +480,25 @@ def rel_to_repo(root, doc_relpath):
 
 
 def cmd_sweep(root, args):
+    man = load_manifest(root)
+    types = load_types(root, man)
+    hooks = load_hooks(root)
     dirty = dirty_set()
     drifted = []
-    for doc in sorted(governed_docs(root)):
+    for doc in sorted(governed_docs(root, man)):
         vlog(args.verbose, f"scan  {os.path.relpath(doc, root)}")
-        parsed = parse_fm(_read(doc))
+        text = _read(doc)
+        parsed = parse_fm(text)
         if not parsed:
             continue
-        fields, covers = parsed
-        if fields.get("class") != "living" or "last_verified" not in fields or not covers:
+        raw_fields, covers = parsed[0], list(parsed[1])
+        if raw_fields.get("class") != "living" or "last_verified" not in raw_fields:
+            continue
+        fields = make_fields(raw_fields, covers, text, types, man)
+        for extra in hook_sources(hooks, root, doc, fields):   # hook-contributed drift anchors
+            if extra not in covers:
+                covers.append(extra)
+        if not covers:
             continue
         lv = fields["last_verified"]
         reasons = []
@@ -311,26 +551,70 @@ def mark_stale(path):
 
 # ── check (lint) ─────────────────────────────────────────────────────────────
 def cmd_check(root, types, verbose=False):
-    todo = doc_todo(root)
+    man = load_manifest(root)
+    todo = doc_todo(root, man)
+    hooks = load_hooks(root)
+    known = set(BUILTIN_CHECKS) | {h.name for h in hooks}
+    for rel, exempt in sorted(todo.items()):
+        for name in sorted((exempt or set()) - known):
+            print(f"⚠ .doc-todo: {rel} exempts unknown check '{name}' — it exempts nothing. "
+                  f"Known: {', '.join(sorted(known))}", file=sys.stderr)
     bad = 0
-    for doc in sorted(governed_docs(root)):
+    for h in hooks:
+        if h.error:
+            bad += 1
+            print(f"✗ {h.path}")
+            print(f"    - repo-local check failed to import: {h.error}")
+        else:
+            vlog(verbose, f"hook  {h.name}  ({os.path.relpath(h.path, root)})")
+    for doc in sorted(governed_docs(root, man)):
         rel = os.path.relpath(doc, root)
-        if rel in todo:
+        exempt = todo.get(rel, False)
+        if rel in todo and exempt is None:
             vlog(verbose, f"skip  {rel}  (.doc-todo)")
             continue
         vlog(verbose, f"scan  {rel}")
-        v = lint_doc(root, doc, types)
+        v = lint_doc_tagged(root, doc, types, man, hooks)
+        if exempt:
+            v = [(c, m, k) for c, m, k in v if c not in exempt]
+            vlog(verbose, f"      (.doc-todo exempts {sorted(exempt)})")
         if v:
             bad += 1
             print(f"✗ {doc}")
-            for msg, key in v:
+            for _check, msg, key in v:
                 loc = f"  → {doc}:{key_line(doc, key)}" if key else ""
                 print(f"    - {msg}{loc}")
+    warn_adr_across_branches(root, man)
     if bad == 0:
         print("✓ all governed docs compliant")
         return 0
     print(f"\n{bad} non-compliant doc(s).")
     return 1
+
+
+def warn_adr_across_branches(root, man):
+    """Warn when two branches number the same decision differently (ADR-0001 §4).
+
+    A WARNING, never a finding: it reads refs, and a CI `check` job checks out at depth 1
+    with a single branch, where the honest answer is "I cannot see the other branches" —
+    not "they agree". Letting that decide a merge would make the gate wrong precisely
+    where it is least able to know. It stays silent unless more than one ref is visible,
+    so a shallow checkout prints nothing rather than a false all-clear. The collision a
+    rebase actually leaves behind — two files claiming one number in ONE tree — is a real
+    finding; see `duplicate_adr_number`.
+    """
+    found = adr_across_refs(root, adr_home(man))
+    if len(found) < 2:
+        return
+    by_slug = {}
+    for ref, entries in found.items():
+        for n, slug in entries:
+            by_slug.setdefault(slug, {}).setdefault(n, []).append(ref)
+    for slug, nums in sorted(by_slug.items()):
+        if len(nums) > 1:
+            spread = ", ".join(f"{n:04d} ({', '.join(sorted(refs))})" for n, refs in sorted(nums.items()))
+            print(f"⚠ ADR '{slug}' is numbered {len(nums)} ways across branches: {spread}",
+                  file=sys.stderr)
 
 
 def dead_body_links(root, doc):
@@ -396,11 +680,91 @@ def dead_body_links(root, doc):
     return out
 
 
-def lint_doc(root, doc, types):
+def dead_proof_links(root, doc):
+    """Dead citations on a `**Proof:**` line — the model's claim→evidence edge.
+
+    `**Proof:**` cites what proves the claim above it, as a backtick-quoted repo path,
+    and every such path must resolve. This is the cheapest edge the model can check and
+    the only one priced per PARAGRAPH rather than per document, which is why ADR-0001
+    puts it in the model rather than in a repo-local hook.
+
+    A backticked value counts as a citation when it looks like a path — it contains a `/`
+    and ends in an extension — so a `#method` or a describe-block name after the arrow is
+    ignored. That heuristic fails OPEN: `spec/foo_spec` written without its extension is
+    skipped, not flagged, so a clean run is evidence about the citations it recognised and
+    not a proof that every citation resolves. `**Source:**` keeps its older provenance
+    meaning and is never checked. A marker inside a code span is prose about the
+    convention, not a citation — and neither is one inside a fenced block, so a guide that
+    shows the convention does not fail on its own example. A citation may wrap onto
+    following lines until a blank line or the next block. Inert in a repo that never
+    writes the marker.
+    """
+    text = _read(doc)
+    if PROOF_MARKER not in text:
+        return []
+    docdir = os.path.dirname(doc)
+    tick_re = re.compile(r"`([^`]+)`")
+    span_re = re.compile(r"`[^`]*`")
+    path_re = re.compile(r"^[\w./-]+/[\w.-]+\.\w+$")
+    fence_re = re.compile(r"^\s*(```|~~~)")
+    out = []
+    lines = text.splitlines()
+    in_fence = False
+    for idx, raw in enumerate(lines):
+        if fence_re.match(raw):
+            in_fence = not in_fence
+            continue
+        if in_fence or PROOF_MARKER not in span_re.sub("", raw):
+            continue
+        chunk = [raw.split(PROOF_MARKER, 1)[1]]
+        j = idx + 1
+        while j < len(lines) and lines[j].strip() and PROOF_MARKER not in lines[j]:
+            if lines[j].lstrip()[:1] in ("#", "-", "*", "|", ">"):
+                break
+            chunk.append(lines[j])
+            j += 1
+        cited = [c.strip() for c in tick_re.findall(" ".join(chunk))]
+        paths = [c for c in cited if path_re.match(c)]
+        if not paths:
+            out.append((f"{PROOF_MARKER} with no backtick-quoted path  ({doc}:{idx + 1})", None))
+            continue
+        for path in paths:
+            if not (os.path.exists(os.path.normpath(os.path.join(root, path)))
+                    or os.path.exists(os.path.normpath(os.path.join(docdir, path)))):
+                out.append((f"dead proof: {path} -> not found  ({doc}:{idx + 1})", None))
+    return out
+
+
+def duplicate_adr_number(root, doc, man):
+    """Another ADR file in the same home already claims this number.
+
+    The post-rebase collision, caught with zero git: two `0013-*.md` in the decisions
+    directory is the state a renumber leaves behind, and it is the moment it hurts.
+    Cross-BRANCH disagreement is deliberately NOT a gate — see `cmd_adr`.
+    """
+    home = os.path.join(root, mpath(man, "decisions", os.path.join("docs", "decisions")))
+    base = os.path.basename(doc)
+    num = re.match(r"^0*(\d+)[-_]", base)
+    if not num or os.path.dirname(os.path.abspath(doc)) != os.path.abspath(home):
+        return []
+    n = int(num.group(1))
+    siblings = sorted(f for f in os.listdir(home)
+                      if f.endswith(".md") and f != base
+                      and re.match(r"^0*(\d+)[-_]", f)
+                      and int(re.match(r"^0*(\d+)[-_]", f).group(1)) == n)
+    if not siblings:
+        return []
+    return [(f"ADR number {n:04d} is claimed by {len(siblings) + 1} files: "
+             f"{', '.join([base] + siblings)}", None)]
+
+
+def lint_doc_tagged(root, doc, types, man=None, hooks=()):
+    """[(check_name, message, front_matter_key)] — the tagged form `.doc-todo` filters."""
+    man = load_manifest(root) if man is None else man
     text = _read(doc)
     parsed = parse_fm(text)
     if not parsed:
-        return [("no front matter", None)]
+        return [("front-matter", "no front matter", None)]
     fm, covers = parsed
     out = []
     cls, typ = fm.get("class"), fm.get("type")
@@ -483,7 +847,10 @@ def lint_doc(root, doc, types):
             if req not in present:
                 out.append((f"type '{typ}' requires '{req}' (missing)", None))
 
+    tagged = [("front-matter", m, k) for m, k in out]
+
     # ADR heading number must match the filename number (model §9.3)
+    adr = []
     if typ == "adr":
         base = os.path.basename(doc)
         fnum = re.match(r"^0*(\d+)", base)
@@ -492,10 +859,209 @@ def lint_doc(root, doc, types):
             hnum = re.search(r"\b0*(\d+)\b", h1)
             if not hnum or int(hnum.group(1)) != int(fnum.group(1)):
                 hn = hnum.group(0) if hnum else "(none)"
-                out.append((f"ADR heading number {hn} does not match filename {base}", None))
+                adr.append((f"ADR heading number {hn} does not match filename {base}", None))
+        adr.extend(duplicate_adr_number(root, doc, man))
+    tagged += [("adr", m, k) for m, k in adr]
 
-    out.extend(dead_body_links(root, doc))                  # dead internal links in body
-    return out
+    tagged += [("links", m, k) for m, k in dead_body_links(root, doc)]
+    tagged += [("proof", m, k) for m, k in dead_proof_links(root, doc)]
+    tagged += run_hooks(hooks, root, doc, make_fields(fm, covers, text, types, man))
+    return tagged
+
+
+def lint_doc(root, doc, types, man=None, hooks=()):
+    """[(message, front_matter_key)] — the untagged view (stable across v0.2.x)."""
+    return [(m, k) for _c, m, k in lint_doc_tagged(root, doc, types, man, hooks)]
+
+
+# ── index ────────────────────────────────────────────────────────────────────
+def in_index(fields, traw):
+    """The `registry` rule (spec/front-matter.md §4).
+
+      always          → always listed, whatever its tier
+      none            → never listed
+      decide / absent → listed iff it is what a reader may cite today:
+                        tier canonical AND a non-terminal status
+
+    `decide` is the default because the index is a view of the CURRENT system: source
+    evidence and retired docs stay in the repo and out of the map unless asked for.
+    """
+    reg = fields.get("registry")
+    if reg == "none":
+        return False
+    if reg == "always":
+        return True
+    return expected_tier(fields, traw) == "canonical" and fields.get("status") not in TERMINAL_STATUS
+
+
+def _one_line(s):
+    return re.sub(r"\s+", " ", (s or "").replace("|", r"\|")).strip()
+
+
+def index_block(root, types, man):
+    """The generated index region: one section per type, in `_types.yml` order.
+
+    The enum declares the types in a meaningful order and (since v0.2.1) a `description`
+    per type, so it already IS the index's outline — deriving the section order from it
+    keeps the map's shape in one place instead of a second hand-kept list.
+    """
+    buckets = {t: [] for t in types}
+    for doc in sorted(governed_docs(root, man)):
+        parsed = parse_fm(_read(doc))
+        if not parsed:
+            continue
+        fields, _covers = parsed
+        tdef = types.get(fields.get("type"))
+        if not in_index(fields, bool(tdef and tdef["raw"])):
+            continue
+        rel = os.path.relpath(doc, root).replace(os.sep, "/")
+        desc = _one_line(fields.get("description") or fields.get("title") or "")
+        buckets.setdefault(fields.get("type") or "(untyped)", []).append((rel, desc))
+
+    lines = [INDEX_BEGIN,
+             "<!-- Generated by `docgov index --write` from front matter. Do not edit by hand. -->",
+             ""]
+    total = 0
+    for typ, rows in buckets.items():
+        if not rows:
+            continue
+        total += len(rows)
+        head = (types.get(typ) or {}).get("description") or ""
+        lines.append(f"### {typ}" + (f" — {head}" if head else ""))
+        lines.append("")
+        lines.append("| Doc | Description |")
+        lines.append("|---|---|")
+        for rel, desc in sorted(rows):
+            lines.append(f"| [`{rel}`]({rel}) | {desc} |")
+        lines.append("")
+    if not total:
+        lines.append("_No governed doc currently qualifies for the index._")
+        lines.append("")
+    lines.append(INDEX_END)
+    return "\n".join(lines)
+
+
+def splice_index(text, block):
+    """Replace the marked region, returning (new_text, found_markers)."""
+    b, e = text.find(INDEX_BEGIN), text.find(INDEX_END)
+    if b < 0 or e < 0 or e < b:
+        return text, False
+    return text[:b] + block + text[e + len(INDEX_END):], True
+
+
+def cmd_index(root, types, args):
+    man = load_manifest(root)
+    if args.check and mopt(man, "index_mode", "auto") == "manual":
+        print("docgov index: options.index_mode is `manual` — this repo keeps its index by "
+              "hand, so there is nothing to gate. Set it to `auto` to turn the gate on.")
+        return 0
+    block = index_block(root, types, man)
+    rel = mpath(man, "index", "MAIN.md")
+    path = os.path.join(root, rel)
+    if not (args.write or args.check):
+        print(block)
+        return 0
+    if not os.path.exists(path):
+        print(f"docgov index: no index file at {rel} (set paths.index in .docgov/manifest.yml)")
+        return 1
+    text = _read(path)
+    new, found = splice_index(text, block)
+    if not found:
+        print(f"docgov index: {rel} has no generated region — add these two lines where "
+              f"the map belongs:\n\n    {INDEX_BEGIN}\n    {INDEX_END}\n")
+        return 1
+    if args.check:
+        if new == text:
+            print(f"✓ {rel} index block is up to date")
+            return 0
+        print(f"✗ {rel} index block is stale — regenerate with `docgov index --write`")
+        return 1
+    if new == text:
+        print(f"✓ {rel} index block already up to date")
+        return 0
+    with open(path, "w", encoding="utf-8") as f:
+        f.write(new)
+    print(f"✓ wrote generated index block into {rel}")
+    return 0
+
+
+# ── adr ──────────────────────────────────────────────────────────────────────
+def adr_home(man):
+    return mpath(man, "decisions", os.path.join("docs", "decisions")).rstrip("/")
+
+
+def _adr_parse(name):
+    """`0013-some-slug.md` → (13, 'some-slug'), else None."""
+    m = re.match(r"^0*(\d+)[-_](.+)\.md$", os.path.basename(name))
+    return (int(m.group(1)), m.group(2)) if m else None
+
+
+def adr_across_refs(root, home):
+    """{ref: [(number, slug)]} from the worktree and every ref ALREADY present locally.
+
+    Local branches and the remote-TRACKING refs a previous fetch left behind — this
+    never runs `git fetch`, so it cannot make a caller wait on the network, and it is
+    honest about seeing only what the checkout already has. That limit is also why
+    cross-branch numbering is reported here and never enforced in `check`: on a
+    shallow/single-branch CI checkout the answer would simply be wrong.
+    """
+    found = {}
+    live = []
+    full = os.path.join(root, home)
+    if os.path.isdir(full):
+        live = [p for p in (_adr_parse(f) for f in sorted(os.listdir(full))) if p]
+    found["(worktree)"] = live
+    refs = sh("git", "for-each-ref", "--format=%(refname:short)",
+              "refs/heads", "refs/remotes").splitlines()
+    for ref in refs:
+        if ref.endswith("/HEAD"):
+            continue
+        names = sh("git", "ls-tree", "--name-only", f"{ref}:{home}").splitlines()
+        entries = [p for p in (_adr_parse(n) for n in names) if p]
+        if entries:
+            found[ref] = entries
+    return found
+
+
+def cmd_adr(root, args):
+    man = load_manifest(root)
+    home = adr_home(man)
+    found = adr_across_refs(root, home)
+    if args.adr_cmd == "next":
+        nums = [n for entries in found.values() for n, _ in entries]
+        width = max((len(re.match(r"^0*\d+", f).group(0))
+                     for f in os.listdir(os.path.join(root, home))
+                     if os.path.isdir(os.path.join(root, home)) and _adr_parse(f)), default=4)
+        nxt = (max(nums) + 1) if nums else 1
+        print(f"{nxt:0{width}d}")
+        if args.verbose:
+            print(f"highest {max(nums) if nums else 0} across {len(found)} ref(s) in {home}/",
+                  file=sys.stderr)
+        return 0
+
+    # audit — advisory only
+    by_slug, by_num = {}, {}
+    for ref, entries in found.items():
+        for n, slug in entries:
+            by_slug.setdefault(slug, {}).setdefault(n, []).append(ref)
+            by_num.setdefault(n, {}).setdefault(slug, []).append(ref)
+    issues = 0
+    for slug, nums in sorted(by_slug.items()):
+        if len(nums) > 1:
+            issues += 1
+            print(f"SLUG   {slug} is numbered {len(nums)} ways:")
+            for n, refs in sorted(nums.items()):
+                print(f"         └─ {n:04d}  in {', '.join(sorted(refs))}")
+    for n, slugs in sorted(by_num.items()):
+        if len(slugs) > 1:
+            issues += 1
+            print(f"NUMBER {n:04d} is claimed by {len(slugs)} decisions:")
+            for slug, refs in sorted(slugs.items()):
+                print(f"         └─ {slug}  in {', '.join(sorted(refs))}")
+    print(f"\n{issues} numbering disagreement(s) across {len(found)} ref(s) in {home}/.")
+    if issues:
+        print("Advisory only — `docgov check` gates duplicates in the working tree, not across branches.")
+    return 0
 
 
 def main():
@@ -509,6 +1075,15 @@ def main():
     sw.add_argument("--exit-code", action="store_true",
                     help="exit non-zero if any doc drifted (for a non-blocking CI drift signal)")
     sub.add_parser("check", parents=[common], help="lint governed docs (CI gate)")
+    ix = sub.add_parser("index", parents=[common],
+                        help="generate the navigation index from front matter")
+    ixg = ix.add_mutually_exclusive_group()
+    ixg.add_argument("--write", action="store_true", help="splice the block into the index file")
+    ixg.add_argument("--check", action="store_true",
+                     help="fail if the index file's generated block is stale (CI gate)")
+    adr = sub.add_parser("adr", parents=[common], help="ADR numbering across branches (advisory)")
+    adr.add_argument("adr_cmd", choices=("next", "audit"),
+                     help="next: propose the next free number · audit: report disagreements")
     args = ap.parse_args()
     root = find_root()
     if args.cmd == "sweep":
@@ -517,6 +1092,10 @@ def main():
             sys.exit(1)
     elif args.cmd == "check":
         sys.exit(cmd_check(root, load_types(root), args.verbose))
+    elif args.cmd == "index":
+        sys.exit(cmd_index(root, load_types(root), args))
+    elif args.cmd == "adr":
+        sys.exit(cmd_adr(root, args))
 
 
 if __name__ == "__main__":

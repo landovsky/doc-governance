@@ -390,5 +390,388 @@ class RegressionTests(RepoMixin, unittest.TestCase):
                             for m in self.msgs(self.lint(root, "n.md"))))
 
 
+# ─────────────────────────────────────────────────────────────────────────────
+# v0.3.0 — MANIFEST. The blocker ADR-0001 names: one spelling, keys unique across
+# the whole file, and a parser that knows which map a key sits in.
+# ─────────────────────────────────────────────────────────────────────────────
+class ManifestTests(RepoMixin, unittest.TestCase):
+
+    def test_shipped_payload_template_resolves_its_index_file_not_the_word_manual(self):
+        # The pre-0.3.0 parser matched `^\s*(?:index|index_file):` line-wise with no path
+        # context, so `options.index: manual` overwrote `paths.index: MAIN.md` and the
+        # template every adopter copies verbatim resolved its index to the string "manual".
+        root = os.path.join(REPO_ROOT, "payload")
+        man = docgov.load_manifest(root)
+        self.assertEqual(docgov.mpath(man, "index"), "MAIN.md")
+        self.assertNotEqual(docgov.mpath(man, "index"), "manual")
+
+    def test_master_and_payload_agree_on_every_manifest_path_key(self):
+        # Two spellings of one key is how the collision above got in; a generator that
+        # reads these keys cannot be built on top of divergent templates.
+        master = docgov.load_manifest(REPO_ROOT)["paths"]
+        payload = docgov.load_manifest(os.path.join(REPO_ROOT, "payload"))["paths"]
+        legacy = {"index_file", "types_file", "todo_file", "decisions_dir"}
+        self.assertEqual(legacy & set(master), set(), f"master still uses {legacy & set(master)}")
+        self.assertEqual(legacy & set(payload), set(), f"payload still uses {legacy & set(payload)}")
+
+    def test_options_index_mode_can_never_collide_with_paths_index_again(self):
+        for where in (REPO_ROOT, os.path.join(REPO_ROOT, "payload")):
+            man = docgov.load_manifest(where)
+            self.assertNotIn("index", man["options"], f"{where}: options.index is back")
+            self.assertIn("index_mode", man["options"])
+
+    def test_pre_0_3_0_manifest_still_resolves_so_an_unmigrated_repo_keeps_working(self):
+        root = self.make_repo({}, manifest=(
+            "model_version: 0.2.1\npaths:\n  index_file: DOCS.md\n  types_file: t.yml\n"))
+        man = docgov.load_manifest(root)
+        self.assertEqual(docgov.mpath(man, "index"), "DOCS.md")
+        self.assertEqual(docgov.mpath(man, "types"), "t.yml")
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# v0.3.0 — GENERATED INDEX (ADR-0001 §1). The model's claim is that front matter IS
+# the index; until it is generated, nothing compares the map to the front matter.
+# ─────────────────────────────────────────────────────────────────────────────
+INDEX_MANIFEST = "model_version: 0.3.0\npaths:\n  index: MAIN.md\n  types: _types.yml\n"
+MARKED_INDEX = (
+    "---\nclass: living\ntype: reference\ntitle: Map\n"
+    "covers: [app.py]\nlast_verified: 2026-08-01\nregistry: always\n---\n"
+    "# Map\n\nHand-written prose above.\n\n"
+    "<!-- docgov:index -->\n<!-- /docgov:index -->\n\nHand-written prose below.\n"
+)
+
+
+class IndexTests(RepoMixin, unittest.TestCase):
+
+    def index_repo(self, extra=None):
+        files = {
+            "app.py": "x = 1\n",
+            "MAIN.md": MARKED_INDEX,
+            "ref.md": ("---\nclass: living\ntype: reference\ntitle: Ref\n"
+                       "covers: [app.py]\nlast_verified: 2026-08-01\n"
+                       "description: what is true today\n---\nbody\n"),
+        }
+        files.update(extra or {})
+        return self.make_repo(files, manifest=INDEX_MANIFEST)
+
+    def block(self, root):
+        man = docgov.load_manifest(root)
+        return docgov.index_block(root, docgov.load_types(root, man), man)
+
+    def test_a_governed_doc_appears_in_the_map_without_anyone_linking_it(self):
+        # hriste had 29 of 44 registry:always|decide docs missing from a hand-kept map.
+        self.assertIn("[`ref.md`](ref.md)", self.block(self.index_repo()))
+
+    def test_index_line_is_the_description_because_that_is_what_the_field_is_for(self):
+        self.assertIn("| what is true today |", self.block(self.index_repo()))
+
+    def test_a_folded_description_is_not_rendered_as_a_bare_angle_bracket(self):
+        # `description: >` is the idiomatic way to write a sentence that wraps; the
+        # pre-0.3.0 parser captured the fold indicator and dropped the sentence.
+        root = self.index_repo({"folded.md": (
+            "---\nclass: living\ntype: reference\ntitle: Folded\n"
+            "covers: [app.py]\nlast_verified: 2026-08-01\ndescription: >\n"
+            "  one sentence that\n  wraps across lines\n---\nbody\n")})
+        self.assertIn("| one sentence that wraps across lines |", self.block(root))
+
+    def test_registry_none_stays_out_of_the_map_it_asked_to_be_left_out_of(self):
+        root = self.index_repo({"secret.md": (
+            "---\nclass: living\ntype: reference\ntitle: Internal\n"
+            "covers: [app.py]\nlast_verified: 2026-08-01\nregistry: none\n---\nbody\n")})
+        self.assertNotIn("secret.md", self.block(root))
+
+    def test_registry_always_is_listed_even_though_a_retired_doc_is_not_citable(self):
+        # `always` is the override that makes the map show history on purpose.
+        root = self.index_repo({"old.md": (
+            "---\nclass: transient\ntype: note\ntitle: Retired\n"
+            "status: killed\nregistry: always\n---\nbody\n")})
+        self.assertIn("old.md", self.block(root))
+
+    def test_a_retired_doc_drops_out_of_the_map_by_default_because_the_map_is_of_today(self):
+        # `decide`/absent resolves to "listed iff a reader may cite it now" — the rule
+        # spec/front-matter.md left undefined until a generator forced the question.
+        root = self.index_repo({"dead.md": (
+            "---\nclass: transient\ntype: note\ntitle: Shipped\nstatus: shipped\n---\nbody\n")})
+        self.assertNotIn("dead.md", self.block(root))
+
+    def test_sections_follow_the_type_enum_so_the_outline_lives_in_one_place(self):
+        types = "beta:\n  class: living\n  requires: []\nalpha:\n  class: living\n  requires: []\n"
+        root = self.make_repo({
+            "app.py": "x = 1\n", "MAIN.md": MARKED_INDEX,
+            "b.md": "---\nclass: living\ntype: beta\ntitle: B\ncovers: [app.py]\nlast_verified: 2026-08-01\n---\nx\n",
+            "a.md": "---\nclass: living\ntype: alpha\ntitle: A\ncovers: [app.py]\nlast_verified: 2026-08-01\n---\nx\n",
+        }, types=types, manifest=INDEX_MANIFEST)
+        block = self.block(root)
+        self.assertLess(block.index("### beta"), block.index("### alpha"),
+                        "declaration order in _types.yml is the index outline, not alphabetical")
+
+    def test_write_then_check_is_green_and_an_edit_to_front_matter_turns_it_red(self):
+        # The gate that makes "front matter is the index" falsifiable.
+        root = self.index_repo()
+        self.assertEqual(self.run_cli(root, "index", "--write").returncode, 0)
+        self.assertEqual(self.run_cli(root, "index", "--check").returncode, 0)
+        with open(os.path.join(root, "new.md"), "w") as f:
+            f.write("---\nclass: living\ntype: reference\ntitle: New\n"
+                    "covers: [app.py]\nlast_verified: 2026-08-01\n---\nbody\n")
+        stale = self.run_cli(root, "index", "--check")
+        self.assertNotEqual(stale.returncode, 0, "a doc added without a regen must fail the gate")
+        self.assertIn("stale", stale.stdout)
+
+    def test_prose_outside_the_markers_survives_regeneration(self):
+        # The whole reason for markers: MAIN.md keeps its "how we do things" sections.
+        root = self.index_repo()
+        self.run_cli(root, "index", "--write")
+        with open(os.path.join(root, "MAIN.md")) as f:
+            after = f.read()
+        self.assertIn("Hand-written prose above.", after)
+        self.assertIn("Hand-written prose below.", after)
+
+    def test_an_index_file_with_no_markers_says_which_two_lines_to_add(self):
+        root = self.make_repo({
+            "app.py": "x = 1\n",
+            "MAIN.md": ("---\nclass: living\ntype: reference\ntitle: Map\n"
+                        "covers: [app.py]\nlast_verified: 2026-08-01\n---\n# Map\n"),
+        }, manifest=INDEX_MANIFEST)
+        res = self.run_cli(root, "index", "--write")
+        self.assertNotEqual(res.returncode, 0)
+        self.assertIn(docgov.INDEX_BEGIN, res.stdout)
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# v0.3.0 — EXTENSION HOOKS (ADR-0001 §2). Under `tooling: pinned` a rule added by
+# editing bin/docgov never runs in CI and is lost on the next version bump.
+# ─────────────────────────────────────────────────────────────────────────────
+HOOK_DOC = ("---\nclass: living\ntype: reference\ntitle: Doc\n"
+            "covers: [app.py]\nlast_verified: 2026-08-01\n---\nbody\n")
+
+
+class HookTests(RepoMixin, unittest.TestCase):
+
+    def test_a_repo_local_rule_blocks_the_merge_the_way_a_built_in_does(self):
+        root = self.make_repo({
+            "app.py": "x = 1\n", "doc.md": HOOK_DOC,
+            ".docgov/checks/house_style.py":
+                "def check(root, doc, fields):\n"
+                "    return [] if fields.get('owner') else [('house rule: owner required', 'title')]\n",
+        })
+        res = self.run_cli(root, "check")
+        self.assertNotEqual(res.returncode, 0, "a hook finding must reach the exit code")
+        self.assertIn("house rule: owner required", res.stdout)
+
+    def test_a_hook_reads_covers_without_parsing_the_file_a_second_time(self):
+        # The signature is check(root, doc, fields); fields carries what the built-ins
+        # already parsed, so a non-trivial rule is not pushed into re-reading the doc.
+        root = self.make_repo({
+            "app.py": "x = 1\n", "doc.md": HOOK_DOC,
+            ".docgov/checks/anchors.py":
+                "def check(root, doc, fields):\n"
+                "    return [(f'covers={fields.covers} tier={fields.tier}', None)]\n",
+        })
+        res = self.run_cli(root, "check")
+        self.assertIn("covers=['app.py'] tier=canonical", res.stdout)
+
+    def test_a_hook_that_raises_is_reported_and_goes_red_rather_than_killing_the_gate(self):
+        # A broken rule must not read as a pass, and must not take the built-ins with it.
+        root = self.make_repo({
+            "app.py": "x = 1\n",
+            "doc.md": HOOK_DOC.replace("title: Doc\n", "title: Doc\nupdated: 2026-01-01\n"),
+            ".docgov/checks/boom.py": "def check(root, doc, fields):\n    raise ValueError('nope')\n",
+        })
+        res = self.run_cli(root, "check")
+        self.assertNotEqual(res.returncode, 0)
+        self.assertIn("check hook raised", res.stdout)
+        self.assertIn("forbidden key", res.stdout, "built-in findings must still be reported")
+
+    def test_a_hook_that_does_not_import_fails_the_gate_instead_of_being_skipped(self):
+        root = self.make_repo({
+            "app.py": "x = 1\n", "doc.md": HOOK_DOC,
+            ".docgov/checks/broken.py": "this is not python\n",
+        })
+        res = self.run_cli(root, "check")
+        self.assertNotEqual(res.returncode, 0)
+        self.assertIn("failed to import", res.stdout)
+
+    def test_an_underscore_module_is_a_helper_and_is_not_run_as_a_rule(self):
+        root = self.make_repo({
+            "app.py": "x = 1\n", "doc.md": HOOK_DOC,
+            ".docgov/checks/_shared.py": "def check(root, doc, fields):\n    return [('never', None)]\n",
+        })
+        self.assertEqual(self.run_cli(root, "check").returncode, 0)
+
+    def test_a_hook_can_add_a_drift_anchor_the_doc_does_not_list_in_covers(self):
+        root = self.make_repo({
+            "app.py": "x = 1\n", "extra.py": "y = 1\n", "doc.md": HOOK_DOC,
+            ".docgov/checks/extra_anchor.py":
+                "def sources(root, doc, fields):\n    return ['extra.py']\n",
+        })
+        self.git(root, "init", "-q")
+        self.git(root, "add", "-A")
+        self.git(root, "commit", "-q", "-m", "init")
+        with open(os.path.join(root, "extra.py"), "a") as f:
+            f.write("y = 2\n")
+        res = self.run_cli(root, "sweep")
+        self.assertIn("extra.py", res.stdout,
+                      "a hook-contributed source must drift the doc like a covers[] entry")
+
+    def test_doc_todo_exempts_one_named_check_and_leaves_the_rest_gating(self):
+        # A per-document exemption that silently widens as checks are added is a ratchet
+        # (model §9.6) that loosens on its own; `# check:<name>` keeps it pinned.
+        root = self.make_repo({
+            "app.py": "x = 1\n",
+            "doc.md": HOOK_DOC.replace("title: Doc\n", "title: Doc\nupdated: 2026-01-01\n"),
+            ".docgov/checks/house.py":
+                "def check(root, doc, fields):\n    return [('house finding', None)]\n",
+            ".docgov/.doc-todo": "doc.md  # check:house — grandfathered for the house rule only\n",
+        })
+        res = self.run_cli(root, "check")
+        self.assertNotIn("house finding", res.stdout, "the named check must be exempted")
+        self.assertIn("forbidden key", res.stdout, "the other checks must still gate")
+        self.assertNotEqual(res.returncode, 0)
+
+    def test_a_doc_todo_entry_naming_a_check_nobody_defines_says_so(self):
+        # A typo'd or stale check name exempts nothing and looks like it exempts something.
+        root = self.make_repo({
+            "app.py": "x = 1\n", "doc.md": HOOK_DOC,
+            ".docgov/.doc-todo": "doc.md  # check:hosue_rule\n",
+        })
+        self.assertIn("exempts unknown check 'hosue_rule'", self.run_cli(root, "check").stderr)
+
+    def test_a_repo_keeping_its_index_by_hand_is_not_gated_on_a_map_it_never_generates(self):
+        root = self.make_repo({
+            "app.py": "x = 1\n", "MAIN.md": MARKED_INDEX,
+        }, manifest=INDEX_MANIFEST + "options:\n  index_mode: manual\n")
+        res = self.run_cli(root, "index", "--check")
+        self.assertEqual(res.returncode, 0)
+        self.assertIn("index_mode is `manual`", res.stdout)
+
+    def test_a_bare_doc_todo_line_still_exempts_the_whole_document(self):
+        root = self.make_repo({
+            "app.py": "x = 1\n",
+            "doc.md": HOOK_DOC.replace("title: Doc\n", "title: Doc\nupdated: 2026-01-01\n"),
+            ".docgov/.doc-todo": "doc.md\n",
+        })
+        self.assertEqual(self.run_cli(root, "check").returncode, 0)
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# v0.3.0 — **Proof:** (ADR-0001 §3). The one claim→evidence edge priced per
+# paragraph rather than per document.
+# ─────────────────────────────────────────────────────────────────────────────
+class ProofTests(RepoMixin, unittest.TestCase):
+
+    def proof_repo(self, body):
+        return self.make_repo({
+            "app.py": "x = 1\n",
+            "spec/thing_spec.rb": "describe\n",
+            "doc.md": ("---\nclass: living\ntype: reference\ntitle: T\n"
+                       "covers: [app.py]\nlast_verified: 2026-08-01\n---\n" + body),
+        })
+
+    def proof(self, root):
+        return [m for m, _ in docgov.dead_proof_links(root, os.path.join(root, "doc.md"))]
+
+    def test_a_citation_that_resolves_is_the_evidence_the_claim_says_it_is(self):
+        self.assertEqual(self.proof(self.proof_repo(
+            "Tasks close on merge.\n\n**Proof:** `spec/thing_spec.rb`\n")), [])
+
+    def test_a_citation_pointing_at_a_spec_that_no_longer_exists_is_flagged(self):
+        # The failure this edge exists to catch: the spec moved, the claim did not.
+        msgs = self.proof(self.proof_repo("Claim.\n\n**Proof:** `spec/gone_spec.rb`\n"))
+        self.assertTrue(any("gone_spec.rb" in m for m in msgs), msgs)
+
+    def test_a_backticked_method_name_is_not_a_path_and_is_not_chased(self):
+        msgs = self.proof(self.proof_repo(
+            "Claim.\n\n**Proof:** `spec/thing_spec.rb` -> `#close!`\n"))
+        self.assertEqual(msgs, [], msgs)
+
+    def test_the_marker_written_inside_a_code_span_is_prose_about_the_convention(self):
+        # Every doc that documents this convention would otherwise fail on itself.
+        self.assertEqual(self.proof(self.proof_repo(
+            "Write `**Proof:**` followed by a path.\n")), [])
+
+    def test_the_marker_shown_inside_a_fenced_example_is_teaching_not_citing(self):
+        # A guide that documents the convention must not fail on the example it shows —
+        # the failure mode the lifted reference implementation had.
+        self.assertEqual(self.proof(self.proof_repo(
+            "How to cite:\n\n```markdown\nA claim.\n\n**Proof:** `spec/gone_spec.rb`\n```\n")), [])
+
+    def test_a_marker_citing_nothing_at_all_is_flagged_as_an_empty_claim(self):
+        msgs = self.proof(self.proof_repo("Claim.\n\n**Proof:** the integration suite\n"))
+        self.assertTrue(any("no backtick-quoted path" in m for m in msgs), msgs)
+
+    def test_a_repo_that_never_writes_the_marker_never_sees_this_check(self):
+        # Inert by absence is what lets a portable model carry a prose convention.
+        self.assertEqual(self.proof(self.proof_repo("Just a claim, no marker.\n")), [])
+
+    def test_source_keeps_its_older_provenance_meaning_and_is_never_chased(self):
+        self.assertEqual(self.proof(self.proof_repo(
+            "Claim.\n\n**Source:** `notes/gone-meeting.md`\n")), [])
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# v0.3.0 — ADR NUMBERING (ADR-0001 §4).
+# ─────────────────────────────────────────────────────────────────────────────
+ADR_MANIFEST = ("model_version: 0.3.0\npaths:\n  types: _types.yml\n"
+                "  decisions: docs/decisions\n")
+
+
+def _adr(num, slug):
+    return (f"---\nclass: immutable\ntype: adr\ntitle: {slug}\ndate: 2026-01-01\n---\n"
+            f"# ADR-{num} — {slug}\n")
+
+
+class AdrNumberingTests(RepoMixin, unittest.TestCase):
+
+    def test_two_files_claiming_one_number_in_one_tree_is_what_a_rebase_leaves_behind(self):
+        root = self.make_repo({
+            "docs/decisions/0013-alpha.md": _adr("0013", "alpha"),
+            "docs/decisions/0013-beta.md": _adr("0013", "beta"),
+        }, manifest=ADR_MANIFEST)
+        msgs = self.msgs(self.lint(root, "docs/decisions/0013-alpha.md"))
+        self.assertTrue(any("claimed by 2 files" in m for m in msgs), msgs)
+
+    def test_distinct_numbers_in_one_home_are_left_alone(self):
+        root = self.make_repo({
+            "docs/decisions/0013-alpha.md": _adr("0013", "alpha"),
+            "docs/decisions/0014-beta.md": _adr("0014", "beta"),
+        }, manifest=ADR_MANIFEST)
+        self.assertEqual(self.msgs(self.lint(root, "docs/decisions/0013-alpha.md")), [])
+
+    def test_next_proposes_a_number_free_on_every_branch_the_checkout_can_see(self):
+        # A human scanning one working tree proposes a number another branch already took.
+        root = self.make_repo({"docs/decisions/0002-here.md": _adr("0002", "here")},
+                              manifest=ADR_MANIFEST)
+        self.git(root, "init", "-q")
+        self.git(root, "add", "-A")
+        self.git(root, "commit", "-q", "-m", "init")
+        self.git(root, "checkout", "-q", "-b", "other")
+        os.rename(os.path.join(root, "docs/decisions/0002-here.md"),
+                  os.path.join(root, "docs/decisions/0009-there.md"))
+        self.git(root, "add", "-A")
+        self.git(root, "commit", "-q", "-m", "renumber")
+        self.git(root, "checkout", "-q", "-")
+        self.assertEqual(self.run_cli(root, "adr", "next").stdout.strip(), "0010",
+                         "next must clear the highest number on ANY visible branch, not just HEAD")
+
+    def test_branches_disagreeing_on_a_number_warn_but_do_not_decide_the_merge(self):
+        # check reads refs, and a CI checkout is depth 1 with one branch: there the honest
+        # answer is "I cannot see the others", not "they agree". A gate must not be wrong
+        # exactly where it cannot know.
+        root = self.make_repo({"docs/decisions/0002-thing.md": _adr("0002", "thing")},
+                              manifest=ADR_MANIFEST)
+        self.git(root, "init", "-q")
+        self.git(root, "add", "-A")
+        self.git(root, "commit", "-q", "-m", "init")
+        self.git(root, "checkout", "-q", "-b", "other")
+        os.remove(os.path.join(root, "docs/decisions/0002-thing.md"))
+        with open(os.path.join(root, "docs/decisions/0007-thing.md"), "w") as f:
+            f.write(_adr("0007", "thing"))      # renumbered cleanly — only the branches disagree
+        self.git(root, "add", "-A")
+        self.git(root, "commit", "-q", "-m", "renumber")
+        res = self.run_cli(root, "check")
+        self.assertIn("is numbered 2 ways across branches", res.stderr)
+        self.assertEqual(res.returncode, 0, "a cross-branch disagreement must not block a merge")
+
+
 if __name__ == "__main__":
     unittest.main()
