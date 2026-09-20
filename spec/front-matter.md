@@ -92,6 +92,19 @@ A task closes when its last subtask closes.
 **Proof:** `spec/models/task_spec.rb`
 ```
 
+- **Plural evidence goes in one marker, not one marker per file.** A bullet list opening on
+  the line right under `**Proof:**` is read as part of that citation, and each bullet is
+  checked and reported at its own line:
+
+  ```markdown
+  A user cannot hold two subscriptions with the same `(task_id, reason)`.
+
+  **Proof:**
+  - `spec/models/task_management/subscription_spec.rb` → validations
+  - `spec/domains/task_management/services/assign_task_spec.rb` → re-assign is idempotent
+  ```
+
+  A list that starts further down the paragraph is a different thought and is not chased.
 - A backticked value counts as a citation when it contains a `/` **and** ends in an
   extension — so `#close!` and a describe-block name after an arrow are ignored.
 - A marker inside an inline code span or a fenced block is prose *about* the convention.

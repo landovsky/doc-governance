@@ -13,6 +13,15 @@ Model-version history for the docs-governance system. Newest first.
 Format follows [keep-a-changelog](https://keepachangelog.com/). See
 [`PROVENANCE.md`](PROVENANCE.md) for the rationale behind these changes.
 
+## [Unreleased]
+
+### Added
+- **`**Proof:**` takes a bullet list.** A list opening on the line right under the marker is
+  read as one citation with several paths, each checked and reported at its own line. The
+  first repo to write the marker at scale produced a stack of one-line `**Proof:**`
+  paragraphs whenever a claim rested on more than one spec; that is now one block. A list
+  starting further down the paragraph is still not chased.
+
 ## [0.3.0] — 2026-09-19
 
 The index stops being a promise. Until now the model's central claim — *front matter **is**

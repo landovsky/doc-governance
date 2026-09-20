@@ -703,6 +703,31 @@ class ProofTests(RepoMixin, unittest.TestCase):
         # Inert by absence is what lets a portable model carry a prose convention.
         self.assertEqual(self.proof(self.proof_repo("Just a claim, no marker.\n")), [])
 
+    def test_several_specs_prove_one_claim_under_a_single_marker(self):
+        # The hand-written form when evidence is plural: one **Proof:** with a bullet list,
+        # not one **Proof:** paragraph per file — which is what readers were skipping over.
+        self.assertEqual(self.proof(self.proof_repo(
+            "Claim.\n\n**Proof:**\n"
+            "- `spec/thing_spec.rb` -> validations\n"
+            "- `app.py` -> the caller\n")), [])
+
+    def test_one_dead_spec_in_the_list_is_named_at_its_own_line(self):
+        # The point of the list form is that the reader can see WHICH bullet rotted.
+        msgs = self.proof(self.proof_repo(
+            "Claim.\n\n**Proof:**\n"
+            "- `spec/thing_spec.rb`\n"
+            "- `spec/gone_spec.rb`\n"))
+        self.assertEqual(len(msgs), 1, msgs)
+        self.assertIn("gone_spec.rb", msgs[0])
+        self.assertIn("doc.md:12", msgs[0])
+
+    def test_an_unrelated_list_further_down_the_paragraph_is_still_not_the_citation(self):
+        # Only a list that OPENS under the marker is evidence; the old break stays otherwise.
+        self.assertEqual(self.proof(self.proof_repo(
+            "Claim.\n\n**Proof:** `spec/thing_spec.rb`\n"
+            "and some trailing prose\n"
+            "- `spec/gone_spec.rb` is a different thought\n")), [])
+
     def test_source_keeps_its_older_provenance_meaning_and_is_never_chased(self):
         self.assertEqual(self.proof(self.proof_repo(
             "Claim.\n\n**Source:** `notes/gone-meeting.md`\n")), [])

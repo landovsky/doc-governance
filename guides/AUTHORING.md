@@ -213,6 +213,20 @@ A task closes when its last subtask closes.
 **Proof:** `spec/models/task_spec.rb`
 ```
 
+- **Several specs, one marker.** When more than one file proves the claim, put a bullet list
+  directly under the marker rather than repeating `**Proof:**` per file — the repetition is
+  what readers skip:
+
+  ```markdown
+  A user cannot hold two subscriptions with the same `(task_id, reason)`.
+
+  **Proof:**
+  - `spec/models/task_management/subscription_spec.rb` → validations
+  - `spec/domains/task_management/services/assign_task_spec.rb` → re-assign is idempotent
+  ```
+
+  Each bullet is checked and a dead one is reported at its own line. Only a list that opens
+  immediately under the marker counts; one further down the paragraph is left alone.
 - Backticked values that are not paths are ignored — `#close!`, a describe-block name.
 - A marker inside an inline code span or a fenced block is prose *about* the convention.
 - **`**Source:**` is a different marker.** It means provenance — where something came from,

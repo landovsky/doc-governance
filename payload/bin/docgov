@@ -638,6 +638,7 @@ def dead_body_links(root, doc):
                 break
     docdir = os.path.dirname(doc)
     fence_re = re.compile(r"^\s*(```|~~~)")
+    BULLETS = ("-", "*", "+")
     link_re = re.compile(r"\[[^\]]*\]\(([^)]+)\)")           # inline [text](target)
     refdef_re = re.compile(r"^\s{0,3}\[[^\]]+\]:\s+(\S+)")   # reference def  [id]: target
     code_span = re.compile(r"`[^`]*`")
@@ -696,8 +697,10 @@ def dead_proof_links(root, doc):
     meaning and is never checked. A marker inside a code span is prose about the
     convention, not a citation — and neither is one inside a fenced block, so a guide that
     shows the convention does not fail on its own example. A citation may wrap onto
-    following lines until a blank line or the next block. Inert in a repo that never
-    writes the marker.
+    following lines until a blank line or the next block, and a bullet list opening
+    immediately under the marker carries several citations under one marker — the form that
+    keeps a claim proved by four specs from becoming four **Proof:** paragraphs. Inert in a
+    repo that never writes the marker.
     """
     text = _read(doc)
     if PROOF_MARKER not in text:
@@ -707,6 +710,7 @@ def dead_proof_links(root, doc):
     span_re = re.compile(r"`[^`]*`")
     path_re = re.compile(r"^[\w./-]+/[\w.-]+\.\w+$")
     fence_re = re.compile(r"^\s*(```|~~~)")
+    BULLETS = ("-", "*", "+")
     out = []
     lines = text.splitlines()
     in_fence = False
@@ -718,20 +722,26 @@ def dead_proof_links(root, doc):
             continue
         chunk = [raw.split(PROOF_MARKER, 1)[1]]
         j = idx + 1
+        # One marker, several citations: a bullet list opening on the line right after the
+        # marker is part of THIS citation, so multi-file evidence reads as one block instead
+        # of one **Proof:** paragraph per file. A list further down the paragraph is not.
+        listed = j < len(lines) and lines[j].lstrip()[:1] in BULLETS
         while j < len(lines) and lines[j].strip() and PROOF_MARKER not in lines[j]:
-            if lines[j].lstrip()[:1] in ("#", "-", "*", "|", ">"):
+            head = lines[j].lstrip()[:1]
+            if head in ("#", "|", ">") or (head in BULLETS and not listed):
                 break
             chunk.append(lines[j])
             j += 1
-        cited = [c.strip() for c in tick_re.findall(" ".join(chunk))]
-        paths = [c for c in cited if path_re.match(c)]
+        cited = [(c.strip(), idx + off + 1)
+                 for off, part in enumerate(chunk) for c in tick_re.findall(part)]
+        paths = [(c, ln) for c, ln in cited if path_re.match(c)]
         if not paths:
             out.append((f"{PROOF_MARKER} with no backtick-quoted path  ({doc}:{idx + 1})", None))
             continue
-        for path in paths:
+        for path, lineno in paths:
             if not (os.path.exists(os.path.normpath(os.path.join(root, path)))
                     or os.path.exists(os.path.normpath(os.path.join(docdir, path)))):
-                out.append((f"dead proof: {path} -> not found  ({doc}:{idx + 1})", None))
+                out.append((f"dead proof: {path} -> not found  ({doc}:{lineno})", None))
     return out
 
 
