@@ -5,7 +5,7 @@
 # (Shape mirrors payload/.docgov/manifest.yml; values here are real, not placeholders.)
 
 # Version of the shared model THIS repo conforms to — and, being the master, defines.
-model_version: 0.3.0
+model_version: 0.3.1
 
 # ISO date the master adopted (dogfooded) its own model.
 adopted_at: 2026-08-20

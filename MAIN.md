@@ -47,7 +47,7 @@ description: >
 | Doc | Description |
 |---|---|
 | [`MAIN.md`](MAIN.md) | The generated navigation index for the docs-governance master package — every governed doc grouped by type, what is deliberately NOT governed here, and where the governance rules live. The map itself is emitted from front matter by `docgov index`; the prose around it is hand-written. |
-| [`README.md`](README.md) | Master entry for the portable documentation-governance system (model v0.3.0) — the class × tier × type model, its payload, guides, and current adoption status. |
+| [`README.md`](README.md) | Master entry for the portable documentation-governance system (model v0.3.1) — the class × tier × type model, its payload, guides, and current adoption status. |
 
 ### changelog — model-version history, kept current
 

@@ -13,7 +13,7 @@ Model-version history for the docs-governance system. Newest first.
 Format follows [keep-a-changelog](https://keepachangelog.com/). See
 [`PROVENANCE.md`](PROVENANCE.md) for the rationale behind these changes.
 
-## [Unreleased]
+## [0.3.1] — 2026-09-21
 
 ### Added
 - **`**Proof:**` takes a bullet list.** A list opening on the line right under the marker is

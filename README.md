@@ -5,7 +5,7 @@ tier: canonical
 title: Docs-Governance System
 covers: [spec/model.md, VERSION]
 last_verified: 2026-08-22
-description: Master entry for the portable documentation-governance system (model v0.3.0) — the class × tier × type model, its payload, guides, and current adoption status.
+description: Master entry for the portable documentation-governance system (model v0.3.1) — the class × tier × type model, its payload, guides, and current adoption status.
 ---
 
 # Docs-Governance System
@@ -18,7 +18,7 @@ gate, and a grandfather ratchet:
 - **tier** (citeability, *derived* from class + placement) — `canonical` / `source` / `archive`
 - **type** (repo-local vocabulary) — e.g. `entry`, `adr`, `reference`, `runbook`
 
-Current model version: **0.3.0** (see [`VERSION`](VERSION)).
+Current model version: **0.3.1** (see [`VERSION`](VERSION)).
 
 ## Directory map
 
